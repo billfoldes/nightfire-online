@@ -114,6 +114,16 @@ Newest first. Each entry: date, what changed, what was learned, what's next.
 
 ## Log
 
+### 2026-11-19 - Intro movies off by default, and always off in a session (v2.0.1)
+- John (v2.0.0 on Windows: the launcher, the build and an online game all worked): a new PC joined with the logo
+  movies still playing while the host was already at the title. skip_intro is on by default now, and HideFile hides
+  the EA and MGM logos in any session whatever the machine's setting (a settings.toml from before keeps its own
+  value). The first-boot Paris tutorial is never forced in a session either (src/game/hooks.cpp).
+- Headless, two machines, the joiner with NF_SKIP_INTRO=0: both logged the logos hidden and only the language
+  select's background opened. scripts/smoke.sh pins NF_SKIP_INTRO=0 (its pad script is timed for the logos).
+  build-win, SMOKE OK.
+- Release v2.0.1 (the latest; v2.0.0 stays a pre-release).
+
 ### 2026-11-19 - The release package is made on Linux; v2.0.0, the first NightFire Online release
 - scripts/release-package.sh: what release-package.bat makes on Windows, from build-win.sh's output: the exes,
   SDL3.dll, d3dcompiler_47.dll and the compiler folder (xbe_recomp.exe cross-compiled here; clang.exe and

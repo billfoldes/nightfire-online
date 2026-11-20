@@ -32,7 +32,7 @@
 namespace net = nf::net;  // the session (src/common/net.cpp)
 
 namespace nf {
-bool skip_intro = false;
+bool skip_intro = true;
 bool skip_tutorial = true;
 bool hide_hud = false;
 bool unlock_missions = false;
@@ -119,9 +119,10 @@ void NetWindow(void* hwnd) {
 }
 
 // skip_intro: default.xbe's EA (07370048) and MGM (07380048) logo movies reported missing, which the game passes
-// over; the language select's background (07350048) and the story's movies stay
+// over; the language select's background (07350048) and the story's movies stay. A session skips them on every
+// machine whatever its setting: one still in them is behind the others at the title
 bool HideFile(const std::string& path) {
-    if (!nf::skip_intro) return false;
+    if (!nf::skip_intro && !net::Active()) return false;
     std::string n;
     for (char c : path) n += char(std::tolower(static_cast<unsigned char>(c)));
     for (const char* logo : {"\\25_fps\\07370048.xmv", "\\25_fps\\07380048.xmv",   // PAL
@@ -535,9 +536,9 @@ const app::GameInfo app::kGame = {
     .images = {{"default.xbe", "Nightfire"}, {"driving.xbe", "NightfireDriving"}},
                                           // each recompiled xbe and its exe, for title launches
     .options = {{"skip_intro", &nf::skip_intro, nullptr, "Skip intro movies (needs a restart)",
-                 "Starts without the EA and MGM logo movies"},
+                 "On by default: starts without the EA and MGM logo movies. Online play always skips them, so every PC reaches the title together."},
                 {"skip_tutorial", &nf::skip_tutorial, nullptr, "Skip first-boot Paris tutorial",
-                 "On by default: pressing Start on a fresh install goes straight to the Main Menu instead of forcing the Paris tutorial mission."},
+                 "On by default: pressing Start on a fresh install goes straight to the Main Menu instead of forcing the Paris tutorial mission. Online play always skips it."},
                 {"hide_hud", &nf::hide_hud, nullptr, "Hide the HUD", "For screenshots; at once, on foot and driving. The menus and pause screens stay."},
                 {"unlock_missions", &nf::unlock_missions, nullptr, "Unlock every mission (greyed ones can be picked)",
                  "At once: every mission can be picked, whatever the codename has finished. The ones not reached yet stay greyed out in the mission list, but select them and they play. The save is not changed (off again, it is as it was). Online, the host's setting as the session started is everyone's."},

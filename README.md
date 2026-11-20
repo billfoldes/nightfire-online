@@ -244,7 +244,8 @@ the falling snow and the guards differ between them.
 - **Hide HUD** - Clears the HUD on foot and in the driving missions, for screenshots (`hide_hud`, F1; at once). The
   pause screens and menus stay.
 - **Quit Game** - The main menu has a Quit Game item, and the settings window (F1) has a Quit game button.
-- **Skip Intro Movies** - `skip_intro = true` starts without the EA and MGM logo movies.
+- **Skip Intro Movies** - `skip_intro`, on by default, starts without the EA and MGM logo movies (online play always
+  skips them, so every PC reaches the title screen together).
 - **Saves** - Kept on an emulated hard disk beside the exe.
 
 ### Miscellaneous
