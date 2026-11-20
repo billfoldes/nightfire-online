@@ -1,7 +1,5 @@
 # 007: NightFire Online
 
-![007: NightFire - native PC port](docs/img/nightfire-pc-port.webp)
-
 An unofficial native PC port of the original Xbox version of 007: NightFire, played online: the console's
 split-screen multiplayer and the campaign in co-op, over the internet.
 
@@ -105,7 +103,8 @@ tools for Windows**), about 3 GB free, plus room for your copy of the game, and 
 
 On Windows each program's code is a DLL (`Nightfire.dll`, `NightfireDriving.dll`). For a release, `release-package.bat`
 (after `build.bat`) makes `NightFire-package.zip` and its `.json`: a tag makes a draft release with the launcher, and
-the package is attached to it by hand before it is published. Game code is never uploaded. `launcher.bat` builds
+the package is attached to it by hand before it is published. On Linux, `scripts/build-win.sh` then
+`scripts/release-package.sh` make the same package into `.local/release`. Game code is never uploaded. `launcher.bat` builds
 `NightFireOnlineLauncher.exe` itself. Files the game writes beside the exe: `settings.toml`, `hdd\`
 (saves; delete it to start again from a first boot), `logs\`, `shadercache.bin` (compiled shaders) and `CrashDumps\`
 if it crashes.

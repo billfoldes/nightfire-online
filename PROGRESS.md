@@ -114,6 +114,21 @@ Newest first. Each entry: date, what changed, what was learned, what's next.
 
 ## Log
 
+### 2026-11-19 - The release package is made on Linux; v2.0.0, the first NightFire Online release
+- scripts/release-package.sh: what release-package.bat makes on Windows, from build-win.sh's output: the exes,
+  SDL3.dll, d3dcompiler_47.dll and the compiler folder (xbe_recomp.exe cross-compiled here; clang.exe and
+  lld-link.exe from LLVM 19.1.7's Windows release, toolchain.json's, sha256 checked; all three on the static C
+  runtime, so no runtime DLLs; the configs, XDK layouts, headers and the exes' import libraries). 65 MB.
+- build-win.sh's DLL link wrote its own import library over the exe's Nightfire.lib / NightfireDriving.lib (lld-link's
+  default /implib), so the .lib it copied into an install's compiler folder was the DLL's: a rebuild there could not
+  link. The DLL's goes to obj/ now.
+- Proven under Wine with the package's own tools, as a player's first start runs them: xbe_recomp.exe's output for
+  both xbes is byte-identical to the Linux tool's (38 files each), clang.exe compiles every file with game_code.cpp's
+  flags, and lld-link.exe links Nightfire.dll and NightfireDriving.dll against the package's .libs, importing from
+  their exes alone. Not yet run through the launcher on Windows.
+- Removed the README's banner (docs/img/nightfire-pc-port.webp). Release notes: docs/releases/v2.0.0.md.
+- Next: John: the v2.0.0 pre-release through NightFireOnlineLauncher.exe on Windows, then it is made the latest.
+
 ### 2026-11-19 - The project's own name and GitHub home: NightFire Online
 - John: a GitHub repo of his own, nightfire-online (github.com/billfoldes/nightfire-online), crediting Harry's
   nightfire-recomp, which this started from (an import of his source on 2026-11-08, not a git fork). The launcher

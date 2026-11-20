@@ -179,8 +179,9 @@ build_exe() {
     wait
     for o in "${code_objs[@]}"; do [ -f "$o" ] || exit 1; done
     echo "link $OUT/$target.dll"
+    # the DLL's own import library goes elsewhere: by default it would overwrite the executable's $target.lib
     lld-link /dll /noentry /nodefaultlib /machine:x64 /opt:noicf "/def:$gen/exports.def" \
-      "${code_objs[@]}" "$OUT/$target.lib" "/out:$OUT/$target.dll"
+      "${code_objs[@]}" "$OUT/$target.lib" "/implib:$OUT/obj/$dir/$target.dll.lib" "/out:$OUT/$target.dll"
   fi
 }
 
@@ -238,7 +239,7 @@ install_into() {
       done
       echo "link $dest/$target.dll (from $work/*.obj + $OUT/$target.lib)"
       lld-link /dll /noentry /nodefaultlib /machine:x64 /opt:noicf "/def:$gen/exports.def" \
-        "${objs[@]}" "$OUT/$target.lib" "/out:$dest/$target.dll"
+        "${objs[@]}" "$OUT/$target.lib" "/implib:$work/$target.dll.lib" "/out:$dest/$target.dll"
       return 0
     fi
     [ -f "$dest/$target.dll" ] && touch "$dest/$target.dll"
