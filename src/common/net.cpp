@@ -83,13 +83,14 @@ int64_t NowMs() {
 }
 
 constexpr uint32_t kMagic = 0x4E464E31;  // "NFN1"
-constexpr uint16_t kVersion = 25;  // 1 (and 2, its Driving.xbe) sent one tick a bundle; 3 (4) no name or handicap;
+constexpr uint16_t kVersion = 27;  // 1 (and 2, its Driving.xbe) sent one tick a bundle; 3 (4) no name or handicap;
                                    // 5 (6) no co-op friendly fire; 7 (8) no rejoining; 9 (10) no host's saves;
                                    // 11 (12) the on-foot sound by the mixer; 13 (14) a driving load's clock counted,
                                    // the car's copied shots paid from player 1's weapon; 15 (16) a seat no one took
                                    // played, no bots' character; 17 (18) no bots below slot 4; 19 (20) the
                                    // host's character overrides per slot, no bot settings (kBotSettings); 21
-                                   // (22) no unlock_multiplayer; 23 (24) no net_quit_together nor kRestart
+                                   // (22) no unlock_multiplayer; 23 (24) no net_quit_together nor kRestart;
+                                   // 25 (26) no net_bots Fill to the Players count
 constexpr uint8_t kHello = 1,   // a joiner asking to play, before boot
     kWelcome = 2,               // the host's answer: the controller it is given, the input delay
     kStart = 3,                 // the host: boot, with the session's player count in the sequence
@@ -2702,7 +2703,7 @@ void Init(void* hwnd) {
         bot_setting[kBotEvery] = std::min<uint32_t>(uint32_t(std::max(0, std::atoi(e))), BotChoices(kBotEvery) - 1);
     if (const char* e = std::getenv("NF_NET_BOT"))  // setting=value,...: the bot settings by number (kBotSettings)
         SetBotSettings(e);
-    if (const char* e = std::getenv("NF_NET_BOTS"); e && *e)  // net_bots: 0 the menu's, else 1 + the count
+    if (const char* e = std::getenv("NF_NET_BOTS"); e && *e)  // net_bots: 0 the menu's, 1 + the count, 10 fill
         bots = std::min<uint32_t>(uint32_t(std::max(0, std::atoi(e))), kBotChoices - 1);
     if (const char* e = std::getenv("NF_NET_CHARACTER"); e && *e)  // net_character: 0 the menu's, 1..29 a character
         my_character = std::min<uint32_t>(uint32_t(std::max(0, std::atoi(e))), kCharacterChoices - 1);
@@ -3592,11 +3593,13 @@ void SetCharacterName(uint32_t model_idx, const char* s) {
 
 int Bots() {
     std::lock_guard lock(g.m);
-    return g.active && g.bots >= 1 && g.bots < kBotChoices ? int(g.bots) - 1 : -1;
+    if (g.active && g.bots == kBotsFill) return std::max(0, std::max(g.players, g_target) - g.players);
+    return g.active && g.bots >= 1 && g.bots < kBotsFill ? int(g.bots) - 1 : -1;
 }
 
 const char* BotChoiceName(uint32_t choice) {
-    static const char* const kNames[kBotChoices] = {"The bot menu's", "None", "1", "2", "3", "4", "5", "6", "7", "8"};
+    static const char* const kNames[kBotChoices] = {"The bot menu's", "None", "1", "2", "3", "4", "5", "6", "7", "8",
+                                                    "Fill to the Players count"};
     return choice < kBotChoices ? kNames[choice] : "";
 }
 

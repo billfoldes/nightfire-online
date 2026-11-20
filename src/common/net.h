@@ -66,7 +66,8 @@ bool UnlocksMultiplayer();  // unlock_multiplayer, the same way
 const char* CharacterChoiceName(uint32_t choice);          // 0 = "Default (Menu)", 1..29 = character name
 void SetCharacterName(uint32_t model_idx, const char* s);  // populated from default.xbe's string table (0x7EB90)
 int CharacterFor(int slot);                                // the player's chosen model index (0..28) for slot 0..9, or -1
-constexpr uint32_t kBotChoices = 10;                       // net_bots: 0 = the bot menu's count, 1..9 = 0..8 bots
+constexpr uint32_t kBotChoices = 11;  // net_bots: 0 = the bot menu's count, 1..9 = 0..8 bots, kBotsFill
+constexpr uint32_t kBotsFill = 10;    // as many as the host's net_players has places the players left empty
 extern uint32_t bots;
 const char* BotChoiceName(uint32_t choice);
 int Bots();                                                // the session's bot count (the host's net_bots), -1 the menu's

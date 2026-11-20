@@ -114,6 +114,15 @@ Newest first. Each entry: date, what changed, what was learned, what's next.
 
 ## Log
 
+### 2026-11-20 - Bots fill the places of players who did not come (v2.0.2)
+- John: a host who started early with fewer players than it asked for got only the bots it had set. net_bots has a
+  new choice, Fill to the Players count (10, kBotsFill): net::Bots() gives max(players, g_target) - players, the
+  host's net_players as every machine has it (kStart's wanted count, in the snapshot), and the match start hook
+  (src/game/view.cpp) spawns that many as for a set count. kVersion 27.
+- Headless (scripts/net-loopback.sh, HOST_PLAYERS=4, HOST_WAIT=20, NF_NET_BOTS=10): the host's wait ended with two
+  machines, both logged "a match of 2 players and 2 bots", NET-LOOPBACK OK with the game's memory identical.
+  build-win, SMOKE OK.
+
 ### 2026-11-19 - README: setting up and online play only
 - John: the GitHub page described Harry's port (its controls, graphics settings and features); this project is
   about online play. The README now has Harry's credit, what NightFire Online adds, setting up with the launcher,

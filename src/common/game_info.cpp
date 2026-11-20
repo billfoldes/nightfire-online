@@ -610,7 +610,7 @@ const app::GameInfo app::kGame = {
                 {"net_fullscreen", &net::fullscreen, nullptr, "Full-screen view per player",
                  "On by default: in an online match each PC draws only its own player's camera and HUD at full screen instead of split-screen. Applies fully at the next match or level."},
                 BotRow("net_bots", &net::bots, "Bots in a match (needs a restart)",
-                       "How many bots join the players in an online match, up to 10 in all (2 players and 8 bots, 3 and 7, ...). The bot menu's: as many as the game's own bot menu says, six at most.",
+                       "How many bots join the players in an online match, up to 10 in all (2 players and 8 bots, 3 and 7, ...). The bot menu's: as many as the game's own bot menu says, six at most. Fill to the Players count: bots take the places of the players who did not come, so a game started early with fewer players than Players above still has that many.",
                        net::kBotChoices, net::BotChoiceName, nullptr, "Bots (the host's settings are everyone's)"),
                 BotRow("net_bot_character", &net::bot_setting[net::kBotEvery], "Every bot's character",
                        "Every bot in an online match plays this character (Random: each one its own, picked again each match), and the game's bot menu shows it. Default: each as Bot 1 to Bot 8 below say. Greyed while one of those has a character.",
