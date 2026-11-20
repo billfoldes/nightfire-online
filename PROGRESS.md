@@ -121,8 +121,11 @@ Newest first. Each entry: date, what changed, what was learned, what's next.
   NightFireOnline folder (no clash with Harry's NightFire); the workflow that builds it on GitHub is renamed to
   match. README: the new name, Harry credited at the top and in Credits, what this adds, issues here. LICENSE
   keeps Harry's notice with this project's beside it. No code changed (SMOKE OK from the last entry stands).
-- Next: create the GitHub repo and push main to it; then a first release (the launcher from the workflow on a tag,
-  plus NightFire-package.zip from release-package.bat).
+- Published (later the same day): github.com/billfoldes/nightfire-online, public, starting from one commit of this
+  tree (bd2144d) made under John's GitHub noreply address, so the earlier commits' emails stay private; the
+  history before it is kept in the private Cursor repo (nightfire-redux, remote `cursor`, branch `cursor-main`).
+- Next: a first release (the launcher from the workflow on a tag, plus NightFire-package.zip from
+  release-package.bat).
 
 ### 2026-11-19 - F1: Restart the session for everyone (host only)
 - John: a host's way out of a stuck session. F1's Hosting section has a Restart button, greyed unless this

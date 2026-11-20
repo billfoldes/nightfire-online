@@ -1,8 +1,11 @@
 # 007: NightFire (original Xbox) - static recompilation
 
-This is NightFire Online (github.com/billfoldes/nightfire-online, also on origin.cursor.com as nightfire-redux),
-built on Harry's hk21x/nightfire-recomp: it started from his source on 2026-11-08 and adds online play. It is not a
-fork of his (the histories are not shared); the launcher and the releases are this project's own.
+This is NightFire Online (github.com/billfoldes/nightfire-online, the remote `origin`), built on Harry's
+hk21x/nightfire-recomp: it started from his source on 2026-11-08 and adds online play. It is not a fork of his (the
+histories are not shared); the launcher and the releases are this project's own. Its history on GitHub starts
+2026-11-19 from one commit; the work before it is in the private archive on origin.cursor.com (nightfire-redux, the
+remote `cursor`, local branch `cursor-main`), which is not pushed to any more. Commits are made as
+`billfoldes <358976925+billfoldes@users.noreply.github.com>` (this clone's git config) and never carry another email.
 
 Goal: a native Windows port built with the XboxXBE-Recomp toolkit in `sdk/` (a git submodule on the fork's `main`).
 Read `sdk/README.md`, `sdk/harness/README.md`, `LESSONS.md`, `PROGRESS.md` and `FINDINGS.md` at the start of every
