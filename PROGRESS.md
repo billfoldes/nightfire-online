@@ -114,6 +114,13 @@ Newest first. Each entry: date, what changed, what was learned, what's next.
 
 ## Log
 
+### 2026-11-19 - README: setting up and online play only
+- John: the GitHub page described Harry's port (its controls, graphics settings and features); this project is
+  about online play. The README now has Harry's credit, what NightFire Online adds, setting up with the launcher,
+  a Playing Online section (hosting, joining and the player's own rows, by F1's own names), building from source,
+  troubleshooting, the licence and credits; it points to Harry's for the port's controls and graphics. The
+  screenshots only the old sections used (docs/img) are gone.
+
 ### 2026-11-19 - Intro movies off by default, and always off in a session (v2.0.1)
 - John (v2.0.0 on Windows: the launcher, the build and an online game all worked): a new PC joined with the logo
   movies still playing while the host was already at the title. skip_intro is on by default now, and HideFile hides
