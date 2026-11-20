@@ -1,0 +1,19 @@
+# NightFire's server list and relay (README.md, On a VPS): master.py in /opt/nightfire, this file in
+# /etc/systemd/system, then: sudo systemctl daemon-reload && sudo systemctl enable --now nightfire-master
+[Unit]
+Description=NightFire server list and relay
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+ExecStart=/usr/bin/python3 /opt/nightfire/master.py --port 26580 --relay 26581 --servers /opt/nightfire/servers.txt
+Restart=always
+RestartSec=5
+User=nobody
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

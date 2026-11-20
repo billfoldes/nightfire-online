@@ -1,0 +1,3 @@
+# a joiner's pad in a level (net-coop.sh JOIN_SCRIPT=): START at 155 s (the pause screen), CONTINUE at 162 s
+9300 START 10
+9700 A 10

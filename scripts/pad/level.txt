@@ -1,0 +1,8 @@
+# a fresh disk into the level NF_LEVEL names (with NF_SKIP_TUTORIAL=0): A picks the language, START at the title
+# starts the first boot's level, the later A presses take any briefing or intro screens
+300 A 10
+2000 START 20
+4000 A 10
+5000 A 10
+6000 A 10
+7000 A 10

@@ -1,0 +1,253 @@
+#pragma once
+#include <array>
+#include <cstdint>
+#include <memory>
+#include <vector>
+
+// Everything the title handed to the XDK Direct3D API, as the API defines it. The renderer translates
+// this to D3D12; nothing here models the console's GPU.
+namespace gpu {
+
+// D3DRS indices of the XDK 5849 build this title links, taken from its own tables
+enum : uint32_t {
+    kRsDeferredFirst = 92,
+    kRsFogEnable = 92,
+    kRsFogTableMode = 93,
+    kRsFogStart = 94,
+    kRsFogEnd = 95,
+    kRsFogDensity = 96,
+    kRsRangeFogEnable = 97,
+    kRsWrap0 = 98,
+    kRsLighting = 102,
+    kRsSpecularEnable = 103,
+    kRsLocalViewer = 104,
+    kRsColorVertex = 105,
+    kRsSpecularMaterialSource = 110,
+    kRsDiffuseMaterialSource = 111,
+    kRsAmbientMaterialSource = 112,
+    kRsEmissiveMaterialSource = 113,
+    kRsAmbient = 115,
+    kRsPointSize = 116,
+    kRsPointSizeMin = 117,
+    kRsPointSpriteEnable = 118,
+    kRsPointScaleEnable = 119,
+    kRsPointScaleA = 120,
+    kRsPointScaleB = 121,
+    kRsPointScaleC = 122,
+    kRsPointSizeMax = 123,
+    kRsPresentationInterval = 127,
+    kRsComplexFirst = 136,
+    kRsPsTextureModes = 136,
+    kRsVertexBlend = 137,
+    kRsFogColor = 138,
+    kRsFillMode = 139,
+    kRsBackFillMode = 140,
+    kRsTwoSidedLighting = 141,
+    kRsNormalizeNormals = 142,
+    kRsZEnable = 143,
+    kRsStencilEnable = 144,
+    kRsStencilFail = 145,
+    kRsFrontFace = 146,
+    kRsCullMode = 147,
+    kRsTextureFactor = 148,
+    kRsZBias = 149,
+    kRsLogicOp = 150,
+    kRsEdgeAntiAlias = 151,
+    kRsMultiSampleAntiAlias = 152,
+    kRsMultiSampleMask = 153,
+    kRsMultiSampleMode = 154,
+    kRsMultiSampleRenderTargetMode = 155,
+    kRsShadowFunc = 156,
+    kRsLineWidth = 157,
+    kRsSampleAlpha = 158,
+    kRsDxt1NoiseEnable = 159,
+    kRsYuvEnable = 160,
+    kRsOcclusionCullEnable = 161,
+    kRsStencilCullEnable = 162,
+    kRsRopZCmpAlwaysRead = 163,
+    kRsRopZRead = 164,
+    kRsDoNotCullUncompressed = 165,
+    kRsMax = 166,
+};
+
+// Simple render states reach the API as (method, value) pairs; the method is the key the XDK's own
+// D3DSIMPLERENDERSTATEENCODE table assigns to each state.
+enum : uint32_t {
+    kMAlphaTestEnable = 0x300,
+    kMBlendEnable = 0x304,
+    kMDitherEnable = 0x310,
+    kMAlphaFunc = 0x33C,
+    kMAlphaRef = 0x340,
+    kMSrcBlend = 0x344,
+    kMDestBlend = 0x348,
+    kMBlendColor = 0x34C,
+    kMBlendOp = 0x350,
+    kMZFunc = 0x354,
+    kMColorWriteEnable = 0x358,
+    kMZWriteEnable = 0x35C,
+    kMStencilWriteMask = 0x360,
+    kMStencilFunc = 0x364,
+    kMStencilRef = 0x368,
+    kMStencilMask = 0x36C,
+    kMStencilZFail = 0x374,
+    kMStencilPass = 0x378,
+    kMShadeMode = 0x37C,
+    kMSolidOffsetEnable = 0x338,
+    kMSlopeScale = 0x384,
+    kMDepthOffset = 0x388,
+    kMPsAlphaInputs = 0x260,     // 8
+    kMPsFinalAbcd = 0x288,
+    kMPsFinalEfgh = 0x28C,
+    kMPsConstant0 = 0xA60,       // 8
+    kMPsConstant1 = 0xA80,       // 8
+    kMPsAlphaOutputs = 0xAA0,    // 8
+    kMPsRgbInputs = 0xAC0,       // 8
+    kMPsCompareMode = 0x17F8,
+    kMPsFinalConstant0 = 0x1E20,
+    kMPsFinalConstant1 = 0x1E24,
+    kMPsRgbOutputs = 0x1E40,     // 8
+    kMPsCombinerCount = 0x1E60,
+    kMPsDotMapping = 0x1E74,
+    kMPsInputTexture = 0x1E78,
+    kMDepthClipControl = 0x1D78,
+    // visibility tests, sent as raw commands rather than render states
+    kMClearReport = 0x17C8,
+    kMCountEnable = 0x17CC,
+    kMGetReport = 0x17D0,
+    // vertex shader constants, sent as raw commands: the slot to load, then a window of 32 dwords (8 constants)
+    kMConstantLoad = 0x1EA4,
+    kMConstant = 0xB80,
+    kMConstantEnd = 0xC00,
+};
+
+// texture stage state indices
+enum : uint32_t {
+    kTssAddressU = 0, kTssAddressV, kTssAddressW, kTssMagFilter, kTssMinFilter, kTssMipFilter, kTssMipLodBias,
+    kTssMaxMipLevel, kTssMaxAnisotropy, kTssColorKeyOp, kTssColorSign, kTssAlphaKill, kTssColorOp, kTssColorArg0,
+    kTssColorArg1, kTssColorArg2, kTssAlphaOp, kTssAlphaArg0, kTssAlphaArg1, kTssAlphaArg2, kTssResultArg,
+    kTssTextureTransformFlags, kTssBumpEnvMat00, kTssBumpEnvMat01, kTssBumpEnvMat11, kTssBumpEnvMat10,
+    kTssBumpEnvLScale, kTssBumpEnvLOffset, kTssTexCoordIndex, kTssBorderColor, kTssColorKeyColor, kTssCount = 32
+};
+
+struct VertexShader {
+    uint32_t handle = 0;       // guest handle, record address | 1
+    std::vector<uint32_t> decl;
+    std::vector<uint32_t> program;  // 4 dwords per instruction
+    uint32_t program_type = 0;      // 0x2078 vertex, 0x7378 state, 0x7778 read/write
+    uint64_t hash = 0;
+    // stream layout parsed from the declaration: register -> stream, offset, type
+    struct Input {
+        int stream = -1;
+        uint32_t offset = 0;
+        uint32_t type = 0;  // D3DVSDT
+    };
+    std::array<Input, 16> inputs{};
+    std::array<uint32_t, 16> stream_stride{};  // bytes consumed per stream by the declaration
+    std::vector<std::pair<uint32_t, std::array<float, 4>>> constants;  // D3DVSD_CONST tokens
+    mutable int screen = -1;  // gpu::ScreenDraw's answer for the program, -1 not yet asked
+    mutable int matrix = -2;  // gpu::MatrixProgram's, -2 not yet asked
+};
+
+struct PixelShader {
+    uint32_t handle = 0;
+    uint32_t def[0xF0 / 4] = {};  // D3DPIXELSHADERDEF
+};
+
+struct Viewport {
+    uint32_t x = 0, y = 0, w = 640, h = 480;
+    float min_z = 0, max_z = 1;
+};
+
+struct Surface {
+    uint32_t header = 0;  // guest D3DSurface
+    uint32_t data = 0, format = 0, size = 0;
+};
+
+struct State {
+    std::array<uint32_t, 0x800> simple{};  // simple render states indexed by method / 4
+    std::array<uint32_t, kRsMax> rs{};     // deferred and complex render states by D3DRS
+    std::array<std::array<uint32_t, kTssCount>, 4> tss{};
+    std::array<uint32_t, 4> textures{};    // guest D3DBaseTexture pointers
+    std::array<uint32_t, 4> palettes{};    // guest D3DPalette pointers, the colours of the stage's P8 texture
+    struct Stream {
+        uint32_t vb = 0;  // guest D3DVertexBuffer
+        uint32_t stride = 0;
+    };
+    std::array<Stream, 16> streams{};
+    // SetVertexShaderInput: streams that replace streams, with the attribute layout below
+    std::array<Stream, 16> input_streams{};
+    uint32_t index_buffer = 0, index_data = 0, base_vertex = 0;
+    // SetVertexShaderInput: while set, draws read their attributes by this layout (the stream offsets added) from
+    // input_streams, in place of the vertex shader's declaration and SetStreamSource's streams
+    bool input_active = false;
+    std::array<VertexShader::Input, 16> input_layout{};
+    uint32_t vs_handle = 0;  // programmable when bit 0 set, otherwise an FVF
+    std::shared_ptr<VertexShader> vs;
+    std::shared_ptr<PixelShader> ps;
+    std::array<std::array<float, 4>, 192> vsc{};  // hardware order: D3D register + 96
+    std::array<std::array<float, 4>, 16> psc{};
+    Viewport viewport;
+    Surface rt, zs;
+    uint32_t scissor_count = 0;
+    std::array<uint32_t, 4 * 8> scissors{};
+    // fixed function
+    std::array<std::array<float, 16>, 512> transforms{};  // by D3DTRANSFORMSTATETYPE
+    std::array<float, 17> material{};
+    std::array<std::array<uint32_t, 26>, 8> lights{};  // D3DLIGHT8
+    uint32_t light_enable = 0;                         // bit per light
+    float ss_offset_x = 0, ss_offset_y = 0;
+    // the target's pixels per pixel drawn: D3DRS_MULTISAMPLEMODE (the back buffer) or _RENDERTARGETMODE (another
+    // target) asking for more samples than the target was made with. The console then draws the target as a smaller
+    // one, each pixel covering aa_x by aa_y of its samples (EoN's particles: 4X on its 640x480 buffer, drawn 320x240
+    // and stretched). Positions, the viewport and scissors are in those larger pixels.
+    uint32_t aa_x = 1, aa_y = 1;
+    // ultrawide: a game hook spreads the 2D being drawn wider than the 4:3 frame (a 4:3 HUD laid out at 16:9): each
+    // draw moved by squeeze_shift guest pixels (a left panel left, a right one right, set per element) as it is
+    // squeezed, its shape kept; no corner is kept on the frame's edges meanwhile (a letter's edge may fall on one)
+    bool squeeze_beyond = false;
+    // a game hook turns the draws whose stage 0 texture has this format (D3DFORMAT, the header's format byte; 0 none)
+    // into a black clear of the target: EoN's menu movie (YUY2) behind the title art, which the console never shows; on
+    // ultrawide it showed at the sides, or a stale picture did without it (the title clears nothing)
+    uint32_t blank_format = 0;
+    float squeeze_shift = 0;
+    // ultrawide: the 2D being drawn is drawn past the frame's edge by a game hook to fill a margin of the squeezed picture:
+    // clipped to that margin instead of the squeezed viewport (-1 left, 1 right, 0 no)
+    int squeeze_margin = 0;
+    float zscale = 16777215.0f;  // depth buffer units per 1.0
+    // 1 / the projection's far w, as the XDK's SetTransform derives it (0x1C34A0). W-buffered, the fixed function and
+    // pretransformed vertices have w scaled by zscale * inv_wfar (0x1C0FC0 folds it into the matrix, 0x1C0300 into
+    // the pass-through program's c0.w); a vertex program's w is its own
+    float inv_wfar = 1.0f;
+};
+
+// Xbox point sprites (D3DRS_POINTSPRITEENABLE) give their coordinates to texture stage 3 alone, and a title drawing
+// them through the fixed function sets its texture and operations on stage 3 (NightFire's snow: stage 0 still held
+// the last draw's texture, which the flakes showed). The host draws such a draw with stage 3 as its first stage and
+// stage 3 off (Cxbx-Reloaded does the same); a pixel shader names its stages itself. Returns that draw's state
+// (a copy, per thread) or null when the draw is left as it is.
+inline const State* PointSpriteStages(const State& s, uint32_t prim) {
+    if (prim != 1 || !s.rs[kRsPointSpriteEnable] || s.ps || !s.textures[3]) return nullptr;
+    thread_local std::unique_ptr<State> t;
+    if (!t) t = std::make_unique<State>();
+    *t = s;
+    t->textures[0] = s.textures[3];
+    t->palettes[0] = s.palettes[3];
+    t->tss[0] = s.tss[3];
+    t->textures[3] = 0;
+    t->palettes[3] = 0;
+    t->tss[3][kTssColorOp] = 1;  // D3DTOP_DISABLE
+    t->tss[3][kTssAlphaOp] = 1;
+    return t.get();
+}
+
+// what a title's code may change about one draw: g_draw_filter, set before the first frame, sees each draw's state
+// (on the render thread when there is one) and may drop its depth test or the draw
+struct DrawAdjust {
+    bool depth_test = true;
+    bool skip = false;
+    int32_t depth_bias = 0;  // added to the polygon offset, in 24 bit depth units; negative draws nearer
+};
+using DrawFilter = void (*)(const State&, DrawAdjust&);
+inline DrawFilter g_draw_filter = nullptr;
+
+}  // namespace gpu

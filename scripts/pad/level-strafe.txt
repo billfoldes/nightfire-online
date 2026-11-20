@@ -1,0 +1,8 @@
+# scripts/pad/level-crouch.txt's way into the level, then the left stick right from 160 s to 185 s: net-coop.sh's
+# snapshots (175 s) and first memory dumps catch this player stepping sideways
+300 A 10
+2000 START 20
+4000 A 10
+5000 A 10
+6000 A 10
+9600 LSR 1500

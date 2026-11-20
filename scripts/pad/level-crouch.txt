@@ -1,0 +1,9 @@
+# scripts/pad/level.txt into the level without its last A (which lands in the level), then one A at 160 s: crouch
+# toggles, so net-coop.sh's snapshots at 175 s show this player crouched, the other standing, each with their own
+# stance icon
+300 A 10
+2000 START 20
+4000 A 10
+5000 A 10
+6000 A 10
+9600 A 10

@@ -1,0 +1,398 @@
+// controllers through SDL: Xbox, PlayStation and Switch pads read into the console controller's report
+#include "core/input.h"
+
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+
+#include <algorithm>
+#include <atomic>
+#include <array>
+#include <chrono>
+#include <cmath>
+#include <cstdlib>
+#include <cstring>
+#include <iterator>
+#include <mutex>
+#include <utility>
+
+#include <SDL3/SDL.h>
+
+#include "app/app.h"
+#include "core/log.h"
+
+namespace input {
+
+namespace {
+
+// a controller takes the lowest free port when it is plugged in and keeps it until it is unplugged
+std::mutex g_lock;
+bool g_sdl = false;
+SDL_Gamepad* g_pads[4] = {};
+// each port's triggers and stick directions read from the least each has given since it was plugged in: an axis
+// the system maps wrong rests part way (a trigger half pulled, a stick held), and from there it reads as released
+float g_rest[4][kControls];
+uint64_t g_plugged[4] = {};
+uint32_t g_rest_said[4] = {};  // the controls logged as resting part way
+std::atomic<bool> g_merge{false};  // MergeControllers
+
+void AddPad(SDL_JoystickID id) {
+    // a steering wheel is core/wheel.cpp's, through DirectInput, never a pad here as well
+    if (SDL_GetJoystickTypeForID(id) == SDL_JOYSTICK_TYPE_WHEEL) {
+        const char* name = SDL_GetJoystickNameForID(id);
+        LOGR("input: %s is a steering wheel, left to the wheel support", name ? name : "a controller");
+        return;
+    }
+    for (SDL_Gamepad* pad : g_pads)
+        if (pad && SDL_GetGamepadID(pad) == id) return;
+    SDL_Gamepad** slot = std::find(std::begin(g_pads), std::end(g_pads), nullptr);
+    if (slot == std::end(g_pads)) return;
+    *slot = SDL_OpenGamepad(id);
+    int port = int(slot - g_pads);
+    std::fill(std::begin(g_rest[port]), std::end(g_rest[port]), 1.0f);
+    g_plugged[port] = SDL_GetTicks();
+    g_rest_said[port] = 0;
+    const char* name = *slot ? SDL_GetGamepadName(*slot) : SDL_GetError();
+    LOGI("input: controller %d %s: %s", int(slot - g_pads) + 1, *slot ? "plugged in" : "failed to open", name ? name : "");
+}
+
+void RemovePad(SDL_JoystickID id) {
+    for (int i = 0; i < 4; i++) {
+        if (!g_pads[i] || SDL_GetGamepadID(g_pads[i]) != id) continue;
+        SDL_CloseGamepad(g_pads[i]);
+        g_pads[i] = nullptr;
+        LOGI("input: controller %d unplugged", i + 1);
+    }
+}
+
+// once a millisecond at most, however many ports and threads read
+void UpdatePads() {
+    static uint64_t last = 0;
+    uint64_t now = SDL_GetTicks();
+    if (!g_sdl || now == last) return;
+    last = now;
+    SDL_PumpEvents();
+    SDL_Event e;
+    while (SDL_PeepEvents(&e, 1, SDL_GETEVENT, SDL_EVENT_FIRST, SDL_EVENT_LAST) == 1) {
+        if (e.type == SDL_EVENT_GAMEPAD_ADDED) AddPad(e.gdevice.which);
+        else if (e.type == SDL_EVENT_GAMEPAD_REMOVED) RemovePad(e.gdevice.which);
+    }
+}
+
+}  // namespace
+
+void Init() {
+    if (g_sdl) return;  // started already for the game code window
+    // WGI reads the triggers apart and HIDAPI takes PlayStation and Switch pads. Reads come from the guest's threads,
+    // so SDL's own thread takes the device notices.
+    SDL_SetHint(SDL_HINT_JOYSTICK_THREAD, "1");
+    SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
+    SDL_SetHint(SDL_HINT_JOYSTICK_WGI, "1");
+    SDL_SetHint(SDL_HINT_JOYSTICK_RAWINPUT, "0");
+    SDL_SetHint(SDL_HINT_XINPUT_ENABLED, "0");
+    SDL_SetHint(SDL_HINT_JOYSTICK_DIRECTINPUT, "0");
+    if (!SDL_Init(SDL_INIT_GAMEPAD)) {
+        LOGE("input: SDL failed to start, no controllers: %s", SDL_GetError());
+        return;
+    }
+    int v = SDL_GetVersion();
+    LOGI("input: SDL %d.%d.%d", SDL_VERSIONNUM_MAJOR(v), SDL_VERSIONNUM_MINOR(v), SDL_VERSIONNUM_MICRO(v));
+    WheelInit(app::Window());
+    std::lock_guard lock(g_lock);
+    g_sdl = true;
+    int count = 0;
+    if (SDL_JoystickID* ids = SDL_GetGamepads(&count)) {
+        for (int i = 0; i < count; i++) AddPad(ids[i]);
+        SDL_free(ids);
+    }
+}
+
+namespace {
+constexpr const char* kNames[kControls] = {
+    "dpad_up", "dpad_down", "dpad_left", "dpad_right", "start", "back", "left_thumb", "right_thumb",
+    "a", "b", "x", "y", "black", "white", "left_trigger", "right_trigger",
+    "left_stick_left", "left_stick_right", "left_stick_up", "left_stick_down",
+    "right_stick_left", "right_stick_right", "right_stick_up", "right_stick_down"};
+constexpr const char* kLabels[kControls] = {
+    "D-pad up", "D-pad down", "D-pad left", "D-pad right", "Start", "Back", "Left stick click", "Right stick click",
+    "A", "B", "X", "Y", "Black (RB)", "White (LB)", "Left trigger", "Right trigger",
+    "Left stick left", "Left stick right", "Left stick up", "Left stick down",
+    "Right stick left", "Right stick right", "Right stick up", "Right stick down"};
+
+// a pad's inputs as 0 to 1 each, in Control order
+void ReadPad(SDL_Gamepad* pad, float* v) {
+    constexpr SDL_GamepadButton kButtons[] = {
+        SDL_GAMEPAD_BUTTON_DPAD_UP,    SDL_GAMEPAD_BUTTON_DPAD_DOWN, SDL_GAMEPAD_BUTTON_DPAD_LEFT,
+        SDL_GAMEPAD_BUTTON_DPAD_RIGHT, SDL_GAMEPAD_BUTTON_START,     SDL_GAMEPAD_BUTTON_BACK,
+        SDL_GAMEPAD_BUTTON_LEFT_STICK, SDL_GAMEPAD_BUTTON_RIGHT_STICK,
+        // A B X Y black white
+        SDL_GAMEPAD_BUTTON_SOUTH, SDL_GAMEPAD_BUTTON_EAST, SDL_GAMEPAD_BUTTON_WEST, SDL_GAMEPAD_BUTTON_NORTH,
+        SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER, SDL_GAMEPAD_BUTTON_LEFT_SHOULDER};
+    for (int i = 0; i < 14; i++) v[i] = SDL_GetGamepadButton(pad, kButtons[i]) ? 1.0f : 0.0f;
+    auto axis = [&](SDL_GamepadAxis a) { return float(SDL_GetGamepadAxis(pad, a)) / 32767.0f; };
+    v[kLT] = std::max(axis(SDL_GAMEPAD_AXIS_LEFT_TRIGGER), 0.0f);
+    v[kRT] = std::max(axis(SDL_GAMEPAD_AXIS_RIGHT_TRIGGER), 0.0f);
+    // SDL's sticks have y down
+    float lx = axis(SDL_GAMEPAD_AXIS_LEFTX), ly = axis(SDL_GAMEPAD_AXIS_LEFTY);
+    float rx = axis(SDL_GAMEPAD_AXIS_RIGHTX), ry = axis(SDL_GAMEPAD_AXIS_RIGHTY);
+    v[kLSLeft] = std::max(-lx, 0.0f), v[kLSRight] = std::max(lx, 0.0f);
+    v[kLSUp] = std::max(-ly, 0.0f), v[kLSDown] = std::max(ly, 0.0f);
+    v[kRSLeft] = std::max(-rx, 0.0f), v[kRSRight] = std::max(rx, 0.0f);
+    v[kRSUp] = std::max(-ry, 0.0f), v[kRSDown] = std::max(ry, 0.0f);
+}
+
+// the pad on that port, its analog controls from where they rest (g_rest); g_lock held
+bool ReadPort(int port, float* v) {
+    SDL_Gamepad* pad = port >= 0 && port < 4 ? g_pads[port] : nullptr;
+    if (!pad) return false;
+    ReadPad(pad, v);
+    uint64_t age = SDL_GetTicks() - g_plugged[port];
+    if (age < 500) return true;  // its first reports may not be in yet: zeros, not where it rests
+    bool settled = age > 3000;
+    for (int c = kLT; c < kControls; c++) {
+        float& rest = g_rest[port][c];
+        rest = std::min(rest, v[c]);
+        if (settled && rest >= 0.25f && !(g_rest_said[port] & (1u << c))) {
+            g_rest_said[port] |= 1u << c;
+            LOGR("input: controller %d's %s rests at %d%%: read from there", port + 1, kLabels[c], int(rest * 100));
+        }
+        v[c] = rest < 0.99f ? std::max(v[c] - rest, 0.0f) / (1 - rest) : 0.0f;
+    }
+    return true;
+}
+
+int16_t Stick(float neg, float pos) {
+    float v = std::clamp(pos - neg, -1.0f, 1.0f);
+    return int16_t(std::lround(v * 32767.0f));
+}
+std::atomic<uint32_t> g_held[4];  // HeldControls, per port
+std::atomic<uint32_t> g_swallow[4];  // held controls kept from the game until let go, per port
+std::atomic<uint16_t> g_rumble[2];  // controller 1's motors as the game last set them, for the wheel
+
+// mouse look: the counts moved since the last poll, read as a rate into a stick deflection. kFullRate counts a second
+// at 100% sensitivity is full deflection; a deflection begins past kDeadZone (a game's own stick dead zone would
+// swallow slow moves) and follows the rate over about a frame (kSmooth seconds), so polls closer than a frame still
+// read it
+std::atomic<int> g_mouse_dx{0}, g_mouse_dy{0};
+std::atomic<bool> g_keyboard{false};    // UsingKeyboard
+std::atomic<int> g_mouse_travel{0};     // counts moved since a controller was last used
+constexpr int kMouseTravel = 16;        // that many and the mouse is in use
+constexpr float kFullRate = 2400.0f, kDeadZone = 0.2f, kSmooth = 1.0f / 60;
+
+void MouseStick(const app::Settings& s, int16_t& rx, int16_t& ry) {
+    static std::chrono::steady_clock::time_point last = std::chrono::steady_clock::now();
+    static float sx = 0, sy = 0;
+    auto now = std::chrono::steady_clock::now();
+    float dt = std::clamp(std::chrono::duration<float>(now - last).count(), 0.001f, 0.1f);
+    last = now;
+    float k = s.mouse_sensitivity / 100.0f / kFullRate / dt;
+    auto deflect = [](float v) {
+        if (v == 0) return 0.0f;
+        float a = std::min(std::fabs(v), 1.0f);
+        return std::copysign(kDeadZone + (1 - kDeadZone) * a, v);
+    };
+    float tx = deflect(g_mouse_dx.exchange(0) * k), ty = deflect(-g_mouse_dy.exchange(0) * k);
+    if (s.mouse_invert_y) ty = -ty;
+    float f = std::min(1.0f, dt / kSmooth);
+    sx += (tx - sx) * f;
+    sy += (ty - sy) * f;
+    if (std::fabs(sx) < 0.01f) sx = 0;
+    if (std::fabs(sy) < 0.01f) sy = 0;
+    rx = int16_t(std::clamp(rx + sx * 32767.0f, -32767.0f, 32767.0f));
+    ry = int16_t(std::clamp(ry + sy * 32767.0f, -32767.0f, 32767.0f));
+}
+}  // namespace
+
+void MouseMoved(int dx, int dy) {
+    g_mouse_dx += dx;
+    g_mouse_dy += dy;
+    if ((g_mouse_travel += std::abs(dx) + std::abs(dy)) > kMouseTravel) g_keyboard = true;
+}
+
+bool UsingKeyboard() { return g_keyboard; }
+
+void MergeControllers(bool on) {
+    if (g_merge.exchange(on) != on) LOGR("input: %s", on ? "every controller plays as controller 1" : "each controller on its own port");
+}
+
+std::atomic<int> g_wheel{0};  // WHEEL_DELTA units
+
+void MouseWheel(int delta) {
+    g_wheel += delta;
+    g_keyboard = true;
+}
+
+int TakeWheel() {
+    if (!MouseLooking()) {
+        g_wheel = 0;
+        return 0;
+    }
+    int w = g_wheel.load(), notches = w / 120;
+    g_wheel -= notches * 120;
+    return notches;
+}
+
+uint32_t MouseButtons() {
+    if (!MouseLooking()) return 0;
+    return uint32_t((GetAsyncKeyState(VK_LBUTTON) & 0x8000) ? 1 : 0) | ((GetAsyncKeyState(VK_RBUTTON) & 0x8000) ? 2 : 0) |
+           ((GetAsyncKeyState(VK_MBUTTON) & 0x8000) ? 4 : 0);
+}
+
+std::array<uint16_t, 2> ControlKeys(int c) {
+    const app::Settings& s = app::Get();
+    return c >= 0 && c < int(s.keys.size()) ? s.keys[size_t(c)] : app::DefaultKeys(c);
+}
+
+bool TakeMouse(float& x, float& y) {
+    x = y = 0;
+    if (!MouseLooking()) return false;
+    const app::Settings& s = app::Get();
+    static std::chrono::steady_clock::time_point last = std::chrono::steady_clock::now();
+    auto now = std::chrono::steady_clock::now();
+    float dt = std::clamp(std::chrono::duration<float>(now - last).count(), 0.001f, 0.1f);
+    last = now;
+    float k = s.mouse_sensitivity / 100.0f / kFullRate / dt;
+    x = g_mouse_dx.exchange(0) * k;
+    y = -g_mouse_dy.exchange(0) * k * (s.mouse_invert_y ? -1.0f : 1.0f);
+    return true;
+}
+
+bool MouseLooking() {
+    const app::Settings& s = app::Get();
+    HWND hwnd = static_cast<HWND>(app::Window());
+    return app::kGame.mouse_look && s.mouse_look && s.keyboard && hwnd && GetForegroundWindow() == hwnd &&
+           !app::OverlayOpen();
+}
+
+const char* ControlName(int c) { return c >= 0 && c < kControls ? kNames[c] : ""; }
+const char* ControlLabel(int c) { return c >= 0 && c < kControls ? kLabels[c] : ""; }
+int ControlByName(const char* name) {
+    for (int c = 0; c < kControls; c++)
+        if (std::strcmp(kNames[c], name) == 0) return c;
+    return -1;
+}
+
+uint32_t HeldControls() { return g_held[0] | g_held[1] | g_held[2] | g_held[3]; }
+void SwallowHeld() {
+    for (int i = 0; i < 4; i++) g_swallow[i] = g_held[i].load();
+}
+
+Pad Poll(int port) {
+    Pad p;
+    float in[kControls] = {}, out[kControls] = {};
+    const app::Settings& s = app::Get();
+    {
+        std::lock_guard lock(g_lock);
+        UpdatePads();
+        p.connected = ReadPort(port, in);
+        if (port == 0 && g_merge) {
+            for (int i = 1; i < 4; i++) {
+                float other[kControls] = {};
+                if (!ReadPort(i, other)) continue;
+                p.connected = true;
+                for (int c = 0; c < kControls; c++) in[c] = std::max(in[c], other[c]);
+            }
+        }
+    }
+    // remapped: each console input reads the physical input the settings name for it
+    for (int c = 0; c < kControls; c++) {
+        int from = c < int(s.pad_map.size()) && s.pad_map[c] < kControls ? s.pad_map[c] : c;
+        out[c] = in[from];
+    }
+    // a steering wheel plays as controller 1 too, by its own button map (the settings window's Wheel tab)
+    float wheel[kControls] = {};
+    if (port == 0 && WheelRead(wheel, &p.wheel)) {
+        p.connected = true;
+        for (int c = 0; c < kControls; c++) {
+            out[c] = std::max(out[c], wheel[c]);
+            in[c] = std::max(in[c], wheel[c]);  // its Back + Start opens the settings window as a pad's does
+        }
+        WheelFeel feel;
+        if (app::kGame.wheel) app::kGame.wheel(feel);
+        WheelFeedback(feel, g_rumble[0], g_rumble[1]);
+    }
+    // the keyboard is controller 1, plugged in while keyboard play is on (alt-tabbing away must not unplug it), its
+    // keys read while the game window has the focus
+    HWND hwnd = static_cast<HWND>(app::Window());
+    if (port == 0) {
+        bool pad_used = false, key_used = false;
+        for (int c = 0; c < kControls; c++) pad_used |= in[c] >= 0.5f;
+        if (s.keyboard && !p.connected) key_used = true;  // nothing else to play with
+        if (s.keyboard) p.connected = true;
+        if (s.keyboard && hwnd && GetForegroundWindow() == hwnd) {
+            for (int c = 0; c < kControls; c++) {
+                std::array<uint16_t, 2> keys = c < int(s.keys.size()) ? s.keys[c] : app::DefaultKeys(c);
+                for (uint16_t k : keys)
+                    if (k && (GetAsyncKeyState(k) & 0x8000)) out[c] = 1.0f, key_used = true;
+            }
+        }
+        if (pad_used) {
+            g_keyboard = false;
+            g_mouse_travel = 0;
+        } else if (key_used) {
+            g_keyboard = true;
+        }
+    }
+    // Back + Start on a controller opens or closes the settings window, Start alone closes it; what was held then
+    // stays from the game until let go
+    uint32_t held = 0;
+    for (int c = 0; c < kControls; c++) held |= uint32_t(in[c] >= 0.5f) << c;
+    if (port >= 0 && port < 4) {
+        static std::atomic<uint32_t> last[4];
+        g_held[port] = held;
+        uint32_t pressed = held & ~last[port].exchange(held);
+        constexpr uint32_t kStartBit = 1u << kStart, kBackBit = 1u << kBack;
+        bool open = app::OverlayOpen();
+        if ((pressed & kStartBit) && ((held & kBackBit) || open)) {
+            std::lock_guard lock(app::UiLock());
+            app::ToggleOverlay();
+            for (auto& w : g_swallow) w = kStartBit | kBackBit;
+        }
+        g_swallow[port] &= held;
+        for (int c = 0; c < kControls; c++)
+            if (g_swallow[port] & (1u << (s.pad_map.size() > size_t(c) ? s.pad_map[c] : c))) out[c] = 0;
+    }
+    // the settings window takes the input while it is open
+    if (app::OverlayOpen()) std::fill(std::begin(out), std::end(out), 0.0f);
+    for (int i = 0; i < 8; i++) p.buttons |= uint16_t(out[i] >= 0.5f) << i;
+    for (int i = 0; i < 8; i++) p.analog[i] = uint8_t(std::lround(std::clamp(out[kA + i], 0.0f, 1.0f) * 255.0f));
+    p.lx = Stick(out[kLSLeft], out[kLSRight]);
+    p.ly = Stick(out[kLSDown], out[kLSUp]);
+    p.rx = Stick(out[kRSLeft], out[kRSRight]);
+    p.ry = Stick(out[kRSDown], out[kRSUp]);
+    if (port == 0 && MouseLooking()) {
+        if (!app::kGame.mouse_direct) MouseStick(s, p.rx, p.ry);
+    } else if (port == 0) {  // nothing kept from before (the settings window, another window in front)
+        g_mouse_dx = 0;
+        g_mouse_dy = 0;
+    }
+    if (app::kGame.pad) app::kGame.pad(port, p);
+    return p;
+}
+
+uint16_t HeldOnAnyController() {
+    constexpr std::pair<SDL_GamepadButton, uint16_t> kFaceButtons[] = {
+        {SDL_GAMEPAD_BUTTON_SOUTH, 0x1000}, {SDL_GAMEPAD_BUTTON_EAST, 0x2000},
+        {SDL_GAMEPAD_BUTTON_WEST, 0x4000},  {SDL_GAMEPAD_BUTTON_NORTH, 0x8000}};
+    std::lock_guard lock(g_lock);
+    UpdatePads();
+    uint16_t held = 0;
+    for (SDL_Gamepad* pad : g_pads)
+        for (auto [button, mask] : kFaceButtons)
+            if (pad && SDL_GetGamepadButton(pad, button)) held |= mask;
+    return held;
+}
+
+// the motors run until set again
+void Rumble(int port, uint16_t left, uint16_t right) {
+    if (app::kGame.rumble) app::kGame.rumble(port, left, right);
+    if (port == 0) g_rumble[0] = left, g_rumble[1] = right;
+    std::lock_guard lock(g_lock);
+    if (port >= 0 && port < 4 && g_pads[port]) SDL_RumbleGamepad(g_pads[port], left, right, 0);
+}
+
+}  // namespace input

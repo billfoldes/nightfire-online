@@ -1,0 +1,28 @@
+# mp-match.txt without its closing START: the other machine of scripts/pad/mp-quit.txt
+# The multiplayer match's presses (scripts/net-loopback.sh), both machines in one session, each booting straight
+# to the main menu (the bootstrap's launch data). scripts/pad/mp_bots.txt's proven walk - the main menu's START,
+# one d-pad down to Multiplayer, A through the join screen, the codename, the ready check and the scenario list -
+# with the match under way about 11000 vblanks in; both machines press the same, so both players join through
+# their own pads. One START once the match is running, so the comparison catches the same standing game
+900 START 20
+1300 START 20
+1900 DOWN 10
+2100 A 10
+2600 A 10
+3100 A 10
+3700 A 10
+4300 A 10
+4900 A 10
+5500 A 10
+6100 A 10
+6700 DOWN 10
+6900 A 10
+7400 A 10
+7900 A 10
+8400 A 10
+9000 UP 10
+9200 A 10
+9700 UP 10
+9900 A 10
+10500 A 10
+11100 A 10

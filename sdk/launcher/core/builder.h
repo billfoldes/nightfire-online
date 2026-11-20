@@ -1,0 +1,118 @@
+#pragma once
+// The launcher's work, step by step, under one folder (root):
+//   tools\    clang, CMake, Ninja, MinGit, the C++ libraries, the Windows SDK (portable, nothing installed)
+//   source\   the game's repository (git), its xbe in source\assets for the build
+//   play\     the built exe, its settings, saves and logs; play\assets is the player's game (a junction to their
+//             folder, or their disc image linked or copied)
+//   launcher.json   the player's choices (their game's path)
+// Each step can run again: what is already done is kept (tools by their stamp, the source by git).
+#include <atomic>
+#include <filesystem>
+#include <functional>
+#include <mutex>
+#include <string>
+#include <utility>
+#include <vector>
+
+#include "core/game.h"
+#include "core/net.h"
+#include "core/plan.h"
+#include "core/platform.h"
+
+namespace launcher {
+
+struct Status {
+    std::string step;    // "Downloading Clang 19.1.7"
+    std::string detail;  // "312 of 845 MB"
+    double fraction = -1;  // 0..1, -1 when unknown
+};
+
+// where a prebuilt install has got to, for the screen's list of steps
+enum class Step { None, Package, Unpack, Compile, Ready };
+
+class Builder {
+public:
+    Builder(const GameConfig& game, const std::filesystem::path& root, Http& http, Platform& platform);
+
+    // where messages go: a status for the window, each log line (also written to root\launcher.log)
+    std::function<void(const Status&)> on_status;
+    std::function<void(const std::string&)> on_log;
+    std::atomic<bool> cancel{false};
+    std::string fallback_toolchain;  // toolchain.json as the launcher was built with, when neither download nor copy
+
+    const std::filesystem::path& Root() const { return root_; }
+    std::filesystem::path PlayDir() const { return root_ / "play"; }
+    std::filesystem::path GameExe() const;
+    bool Built() const;  // the exe is in play
+
+    // the player's copy: checked, remembered, linked into play\assets
+    bool SetGame(const GameCheck& copy, std::string& error);
+    std::filesystem::path SavedGame() const;  // the copy remembered from last time, empty if none
+
+    // the whole build: tools, source, xbe, compile, install. Returns false with the reason (also in launcher.log)
+    bool BuildAll(std::string& error);
+    // game.json's package: the prebuilt runtime and compiler, unpacked into play (saves, music and settings left alone),
+    // then the game's code compiled there. BuildAll takes this way when there is one
+    bool BuildPackage(std::string& error);
+    bool Prebuilt() const { return !game_.package.empty() || !game_.packages.empty(); }
+    std::string PackageName() const;
+    // a game built the old way (its exe with no code DLL beside it): the next build installs the package over it, keeping
+    // saves, music and settings
+    bool Legacy() const;
+    // the old way's tools (FFmpeg stays), source and downloads, which a prebuilt install no longer needs
+    std::vector<std::filesystem::path> OldBuildPaths() const;
+    uint64_t OldBuildBytes() const;
+    bool RemoveOldBuild(std::string& error);  // the chosen disc's zip, empty when none is known for it
+    std::atomic<Step> step{Step::None};
+    // the launcher's folder is too deep for the Windows SDK: msiexec (which unpacks it) fails past 260 characters, and
+    // the SDK's deepest headers lie about 130 below tools\; message: what to do
+    static constexpr size_t kMaxRootLength = 80;
+    bool PathTooLong(std::string& message) const;
+    // each stage of a build timed, its seconds logged as it ends; LogTiming lists them with their shares
+    void StartTiming();
+    bool Timed(const std::string& stage, const std::function<bool()>& step);
+    void LogTiming();
+    // a build of another version is in play: a release launcher's own tag not built yet (no network asked), a dev
+    // launcher's source behind its branch's head
+    bool UpdateAvailable(bool& available, std::string& error);
+    std::string BuiltVersion() const;  // the launcher version the game in play was built by, empty if not known
+    bool Launch(std::string& error);
+    uint64_t BuildFilesBytes() const;  // source\out, removable once built
+    bool RemoveBuildFiles(std::string& error);
+
+    // the game's Xbox custom soundtracks (GameConfig::music) from a folder of the player's music: each file converted
+    // to WMA with ffmpeg (fetched the first time), ST.DB written, the folder remembered; summary: what was done
+    bool ImportMusic(const std::filesystem::path& folder, std::string& summary, std::string& error);
+    std::filesystem::path SavedMusic() const;  // the folder imported last, empty if none
+    std::filesystem::path MusicDir() const;    // where the game finds them: play\hdd\E\TDATA\FFFE0000\MUSIC
+
+    // steps, for the test tool
+    bool LoadToolchain(Plan& plan, std::string& error, bool microsoft = true);
+    bool InstallTool(const Tool& tool, std::string& error);
+    bool GetSource(std::string& error);
+    bool PutXbe(std::string& error);
+    bool Compile(std::string& error);
+    bool Install(std::string& error);
+    std::map<std::string, std::string> BuildEnv(const Plan& plan) const;
+
+    // a line in launcher.log and the window's log (thread safe)
+    void Log(const std::string& line);
+    std::vector<std::pair<std::string, double>> stages_;  // this build's stages and their seconds
+
+private:
+    void Remember(const std::string& key, const std::string& value);  // an entry of launcher.json, the others kept
+    void Say(const std::string& step, const std::string& detail = {}, double fraction = -1);
+    int Git(const std::vector<std::string>& args, std::string* out, std::string& error);
+    std::filesystem::path ToolPath(const std::string& id) const { return root_ / "tools" / id; }
+
+    GameConfig game_;
+    std::filesystem::path root_;
+    Http& http_;
+    Platform& platform_;
+    Plan plan_;
+    std::mutex log_lock_;
+};
+
+std::string Megabytes(uint64_t bytes);
+
+}  // namespace launcher

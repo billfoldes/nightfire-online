@@ -1,0 +1,105 @@
+# 007: NightFire recomp - findings
+
+What the work has established, by topic. PROGRESS.md has the dated log with the evidence for each item. Each item
+is marked **[console]** (how the Xbox, its XDK or the runtime behaves: the fix is in the SDK) or **[game]** (this
+game's own code and data, with its addresses).
+
+## The image
+- **[game]** Two xbes, both XDK 4831 throughout: default.xbe (on foot, Eurocom's engine, data in `eurocom/`) and
+  Driving.xbe (driving levels, data in `driving/`). default.xbe's strings name "driving.xbe" and "default.xbe" for
+  XLaunchNewImage. Neither links XNet or XOnline.
+- **[console]** XPP (4831) keeps its device type table at the start of the XPP section (default.xbe 0x157214..
+  0x157220): pointers to descriptors whose +4 is the type's init, +8 and +0xC its callbacks. Reached only through the
+  table, so a callback no decode reached needs a `[functions]` entry (0x157334).
+- **[console]** An unnamed XInitDevices (default.xbe 0x15753D) runs the USB driver, which touches the host controller
+  at 0xFED00000 and faults.
+
+- **[game]** Releases: the USA disc's default.xbe (7e4b8f8a...) and Driving.xbe (8d46a023...) differ from the PAL
+  ones in the first 0x1000 bytes alone (signature, certificate: regions 1); the Europe (En,Fr,De,Es,It,Nl,Sv) disc's
+  are the PAL ones. The USA disc has eurocom/30_fps (not 25_fps), eurocom/config.txt ("AM"), English speech only
+  (no mis*fr/ge/sp.spe) and its own driving/misc.viv (NTSC\eng\*.mad). The certificate makes the console NTSC
+  (kernel PalConsole), so the same code finds the USA disc's files.
+- **[game]** EA's front end and driving levels are Driving.xbe; default.xbe (Eurocom) is the language select, intro
+  movies, title and the on-foot levels. START at the title relaunches into Driving.xbe; the launch data carries the
+  video standard (offset 0xE1C, 2 = PAL), which picks `PAL\<language>\` or `NTSC\<language>\` movies inside
+  driving/misc.viv. A movie EA's file layer cannot open leaves its stream busy for good (0x14AF50, 0x14AEE0): the
+  game hangs after 60 frames instead of skipping it.
+- **[console]** XDK 4831 follows 5659 on every 3948/5659 difference; its device is 0x2C30 bytes, miniport at
+  +0x23C0 (sdk/xdk/4831/layout.toml). No .XTLID section: DSOUND names come from call chains, not export ids.
+- **[console]** The two xbes link different subsets of the same 4831 libraries: Driving.xbe has
+  DirectSoundCreateBuffer, IDirectSoundBuffer_SetFilter, SetPixelShaderConstant and SetI3DL2Listener, which
+  default.xbe does not; byte-identical DSOUND thunks make signature picks by link order risky (default.xbe's scan
+  swapped SetMixBins / SetMixBinVolumes).
+- **[console]** D3DDevice_GetRasterStatus reads the CRTC register through the GPU base: hosted (the XMV player).
+- **[console]** A title can fill the console's 64 MB to the last 100 KB (Driving.xbe's Paris level): the host's own
+  buffers live past it (mem::AllocHostContiguous), never in the title's memory.
+
+- **[console]** The device holds the current gamma ramp (CDevice_GammaRamps, two slots) and a console starts with a
+  linear one: titles read it back with GetGammaRamp (Driving.xbe 0x165E70) as the base of their fades.
+- **[game]** Driving.xbe's fades scale the ramp saved at 0x23FC08 (0xE7740, per channel base * scale + 0.5).
+- **[game]** Driving.xbe runs at its video standard's refresh: 0x117DA0 returns [0x1A204C + 4 * [0x243540]] (60, 60, 50
+  for PAL-I, 60), the frame timer's rate (0x10AE50) and 1 / its step; the PAL disc's driving half ran at 50.
+- **[console]** A vertex or index buffer's lock (Driving.xbe 0x16B4C0, flags without NOOVERWRITE) blocks in
+  D3D_BlockOnNonSurfaceResource (0x16CE90), not BlockOnResource; default.xbe does not link it. Unnamed it waited on
+  guest push buffer state only, and the render thread read buffers the title had refilled.
+- **[game]** EAGL's vertex buffers are rings of three (0xF6E90: [+0x1C] + 1 mod 3, locked with flags 0, filled by
+  0xF6890). The mission loading screen draws its picture in 64x64 tiles twice a frame from a pool of them, so a
+  buffer is refilled within the frame; in a race each is refilled about three frames on.
+
+## Push buffers
+- **[game]** None: no push buffer function is linked in either xbe's D3D and game code never touches the push
+  pointer; it writes D3D's shadow state directly (D3D_DirtyFlags, deferred texture state), as the inline setters do.
+
+## Menus and views
+- **[game]** Eurocom's menus (default.xbe) are data: a record stream at [0x25FB08] (page F0, widget F9, attribute F6;
+  .local/menu_re.md), built by 0x93960 page by page; messages per widget id through 0x8E320 (0x4B = A), help lines
+  from 0x959E0. The menu context 0x25F1D0 (+0x1D8 a player) holds the page up (+0x1B8 id, +0x1BC widget, 0 in play).
+- **[game]** default.xbe's cameras (0x1F661C, 0-3 players, 4 scripted): 0x25190 sets the vertical angle (radians,
+  +0x104), aspect (+0x100: 4:3 or 16:9 by 0x1F6610) and pixel scales (+0xEC/+0xF0); the projection (0xDD950) and the
+  culling planes (0xDB5C0) read +0x100/+0x104. The scope zoom adds to +0x104 itself.
+- **[game]** Driving.xbe's views: 0xE46D0 (thiscall: horizontal angle in degrees, aspect, near, far; EoN's 0x2111E0
+  in x87), called only from 0x96EB0: angle = camera +0xB4 * 2 * [[0x1EBFF4]+0x58], times 1.25 and 16:9 with the
+  widescreen byte [[0x1EBFF4]+0x4C]. Nothing culls by the view's sides (no EoN-style global frustum).
+
+## Levels and characters
+- **[game]** On-foot data is one packed file system (`eurocom/filesys.d00`-`d10`): the directory is `d00`'s first
+  0x13800 bytes, 0x26-byte records sorted by the CRC32 of the lower-case name (+0x14 stored size, +0x18 size, +0x1C
+  flags, bit 1 compressed, +0x1E part, +0x22 offset). 0xE3100 opens a name (slots 1-15), 0xE31A0 (handle, buffer,
+  size, offset low, high) reads, 0xE31F0 is the read's busy flag, 0xE3220 closes; 0xE2960 gives a name's record or
+  -1 (0xE3100 stops the game on a missing one).
+- **[game]** A level is an archive `070000xx.bin`: KXC (`KXC\4`, a chunk count, EDL chunks of at most 1 MB, 0xD4BC0
+  unpacks one), unpacked a 0x20 header (directory size, entry count), the directory (size, type, a name ending in the
+  hex ID) and the data in its order, the main pack (type 1) last. Types 0, 1, 2, 11 are texture packs (0xA6B20),
+  3, 4, 5 models and animations (0x14A20), 6-8 and 12 others (0xBE7B0's table at 0xBE8D0).
+- **[game]** The loader 0xBE910 (state at 0x27927C) reads the whole archive into one heap block and hands each entry
+  to 0xBE7B0 with the current entry at 0x279168 (data), 0x279174 (size), 0x279184 (type), 0x2791C8 (ID); in archive
+  mode (0x2ADF70) 0xDCA30 returns that entry. Every entry is used in place: models (0x144C0 adds a 0x30 record and
+  looks the model's textures up by ID, so packs come first) and packs (their last step, 0xBEC80 -> 0x70850, frees the
+  pack's tail inside its heap block). The main pack's last steps run after the loop (0xBFE47, 0xBFE7B).
+- **[game]** The type-1 entry runs 0x11200 once a level: every human model (record +0x2C <= 1) gets Bond's
+  (0x5000007) hardpoints (+0x1C, count +0x2B); 0x500002F gets a merged copy, so a second run doubles it.
+- **[game]** One heap, 0x3100000 bytes (base [0x223A80], size [0x223A88]), reset at each level load (0x70A40). The
+  archive stays whole for the level: the second level in play has 32 MB of it and 15.9 MB free. 0x70AE0 returns 0
+  when full.
+- **[game]** An archive stores a texture once: a later copy is an alias ("TD", the slot - 1) of the slot the first
+  takes in the texture table 0x2ABE80, which 0xDDF90 fills from 1 as the packs of types 0, 1, 2 and 11 load in
+  directory order. 14 of the 29 characters' packs alias another pack's textures.
+- **[game]** The 29 multiplayer characters (0x1637C0, 0x10 each: model, texture pack, hand skin, need flag) are in
+  every match's archive (0x07000023-29, 0x0700004B) with the multiplayer hands 050000B0 and the skin packs
+  010001FD, 01000200, 01000202, 01000201; in no campaign level's. The need flags are set by 0x1A1E0 and read by
+  nothing. The hands are one global, weapon 1's view model [0x18D188] (0x18D024 + 0x10C * weapon + 0x58) with its
+  mode [0x190939]; a player's skin is [inner + 0x8F5].
+- **[game]** A player's third-person animation is picked by 0xA91E0 and 0xA9350 (a set of 9 records, sets at
+  0x17E68C-0x17E8CC) and 0xA94C0 and 0xA9590 (one record) from the weapon's stance [0x18D024 + 0x10C * weapon]
+  (1-6), in a match only: out of one, every weapon gets one held pose (06000A00, 060009FF). The match's records
+  (type 5, 0x20 bytes, the animation's ID low half at +0xE) and animations are in no campaign level.
+
+## Progress (achievements)
+- **[game]** save.dat: a 0x1D-byte header ("KXS", size, key at +8), the rest XORed with (k | 0x80), k from the key
+  plus 0x49 a byte; bit-packed chunks (MSSN: the unlocked mask, each mission's best score and Bond Moves, the game
+  finished bit; BNUS: a 64-bit medal mask).
+- **[game]** default.xbe holds the profile in pieces: unlocked bytes 0x17C590 + 0x18 i, score records 0x17F198 +
+  0x3C i (medal targets +4..+0x10, best +0x30, this run +0x34), category stats 0x17E8F8 + 0xB8 i (target +0, this run
+  +8), medal bits 0x25D6E8/0x25D6EC, difficulty 0x1F65A8. Every completion is scored in default.xbe (driving ones
+  after the handover: launch data result +0x978, 0 done): the Results page 0x40000036, mode 6 at 0x17E544, the level
+  at 0x1F65C8.

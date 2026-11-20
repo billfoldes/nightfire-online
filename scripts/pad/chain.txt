@@ -1,0 +1,8 @@
+# The relaunch chain's presses (scripts/net-loopback.sh). default.xbe from a cold, first boot: A picks the
+# language (a first boot formats its disk, so the select comes up at a different vblank every run - the backstop
+# presses cover the window), and picking the language reboots the game into Driving.xbe (the front end) by
+# itself. The relaunched process restarts this script, its few A presses landing where the front end is by then;
+# the multiplayer navigation comes once the front end's menu order is known
+300 A 10
+800 A 10
+1300 A 10

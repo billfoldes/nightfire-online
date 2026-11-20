@@ -1,0 +1,13 @@
+# scripts/pad/level.txt into the level without its last A, then at 150 s START (the pause screen), down twice to
+# QUIT and A, then up to YES and A: in a session that player alone leaves (net-coop.sh JOINER_STARTS=1 JOIN_SCRIPT=...)
+300 A 10
+2000 START 20
+4000 A 10
+5000 A 10
+6000 A 10
+9000 START 10
+9200 DOWN 8
+9300 DOWN 8
+9400 A 10
+9600 UP 8
+9700 A 10

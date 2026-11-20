@@ -1,0 +1,22 @@
+{
+    "title": "007: NightFire Online",
+    "short": "NightFireOnline",
+    "exe": "Nightfire",
+    "exes": [
+        "Nightfire",
+        "NightfireDriving"
+    ],
+    "xbe": "default.xbe",
+    "xbes": [
+        "default.xbe",
+        "Driving.xbe"
+    ],
+    "releases": {
+        "796222e048be3595c323b4c6d9795107132dc4ca": "PAL (Europe)",
+        "7e4b8f8a54bacc61a5897ba5245fdd65bddc0752": "NTSC (USA)"
+    },
+    "package": "NightFire-package.zip",
+    "repo": "https://github.com/billfoldes/nightfire-online.git",
+    "branch": "main",
+    "toolchain": "https://raw.githubusercontent.com/billfoldes/nightfire-online/main/launcher/toolchain.json"
+}

@@ -1,0 +1,106 @@
+# Xbox XBE Recomp
+
+A tool for creating unofficial native PC ports of original Xbox games. Games are statically recompiled from their x86 XBE into native 64 bit Windows executables. The game's x86 code is translated to C++ ahead of time. The Xbox kernel and the XDK libraries (Direct3D 8, DirectSound, XAPI, XNet) are implemented at the API level on Windows. Everything is drawn with a native Direct3D 12 renderer and played through XAudio2.
+
+This tool was originally created for porting [Tom Clancy's Splinter Cell: Double Agent](https://github.com/TGP482/SCDoubleAgent-XBERecomp) and later used to port [BLACK](https://github.com/TGP482/BLACK-XBERecomp)
+
+> [!NOTE]
+> This project does not include any game assets. You must provide the files from your own legally acquired copy of the game to install or build.
+
+## Installation
+
+- Put this repository in your game repository as `sdk/`. This can be a copy or a submodule.
+- In the game's `CMakeLists.txt`:
+   ```cmake
+   include(sdk/cmake/XbeRecomp.cmake)
+   file(GLOB XBE_HOST_SOURCES CONFIGURE_DEPENDS src/*/*.cpp)
+   list(FILTER XBE_HOST_SOURCES EXCLUDE REGEX "/src/game/")
+   add_xbe_image(MyGame default.xbe game.toml 128 game)
+   ```
+- Build with Clang and Ninja (`clang++`, `-fuse-ld=lld`). Zydis, toml++, Dear ImGui and SDL3 are fetched by CMake.
+
+## Game Setup
+
+1. Copy `templates/game` to a new repository and put this SDK in it as `sdk/`. Set `GAME_TITLE`, `GAME_XBE` and `GAME_EXE` at the top of `build.bat` (`GAME_EXE` in `release.bat` too), and the target and xbe in `add_xbe_image` in `CMakeLists.txt`.
+2. Put the game's XBE and its data folders in the `assets` folder. No game files, keys or generated code belong in any repository.
+3. Run `xbe_symbols`, which `build.bat` does on the first build:
+   ```
+   xbe_symbols assets\default.xbe sdk\xdk --out config\game.toml
+   ```
+   This prints the XBE's library versions, picks `xdk/<build>/signatures.toml` and finds the XDK functions and data the host replaces, then writes the config: `[xbe]` with a partition count and the code sections, the `layout.toml` include, `[symbols]` and `[data]`. Misses and ambiguous names are listed and left at 0, which become trapping stubs. It stops when no `signatures.toml` exists for the XBE's build.
+4. Fill in `app::kGame` in `src/common/game_info.cpp`: title, window name, log and settings file names, splash, the xbe to exe table, game options, and the hooks for loading, the window, drawing and the pads.
+5. Game hooks go in `src/game`. Define `X86_FUNC(sub_XXXXXXXX)` to replace a recompiled function, and call `__imp__sub_XXXXXXXX` to reach the original. `python sdk/tools/symbols/xbe2pe.py config/game.toml game.exe` writes a flat PE with the recompiled functions as exports for Ghidra.
+6. Run `build.bat`. One game repo can build several images, one config and `add_xbe_image` each; `--name` sets the config's `generated/<name>`, which is the folder argument of `add_xbe_image`.
+
+The template also carries what a game repository needs beyond the build: `scripts/` (one-line wrappers for the shared
+scripts in `sdk/scripts`, the game's values in `scripts/game.env`: harness, smoke and soak tests, system link test,
+Windows syntax check, shader check, Ghidra helpers), `launcher/` and `launcher.bat` (the player's launcher, see
+`launcher/README.md`), `.github/workflows/release.yml` (builds the launcher and publishes a release on a tag `v*`),
+and CLAUDE.md, PROGRESS.md and FINDINGS.md to start from.
+
+A new XDK build needs `xdk/<build>/layout.toml` and signatures made from titles whose configs are complete: `xbe_symbols --sign config/a.toml [config/b.toml] --out sdk/xdk/<build>/signatures.toml`. Signatures are lengths and hashes of the functions with addresses masked, never library code.
+
+## Features
+
+### Recompiler
+- **Function Discovery** - Finds every function in the XBE by following direct calls, code pointers and the gaps between known functions.
+- **Jump Tables** - Resolves switch tables of every form the Xbox compiler writes, including byte indexed and backwards tables, memcpy tables and copy sleds.
+- **C++ Exceptions** - Supports C++ exceptions, with try and catch blocks working as on the Xbox.
+- **x87, SSE and MMX** - Translates x87, SSE and MMX instructions, with the x87 register stack tracked at run time.
+- **Overridable Functions** - Makes every recompiled function replaceable, allowing a game to override any of them without editing generated code.
+- **Instruction Hooks** - Adds `[[hook]]`, which calls a game function before or after any instruction, and can return from or jump within the function.
+- **Analysis Overrides** - Adds `[[function]]`, `[[switch]]` and `[xbe] data_ranges` to add functions, set switch targets and mark data the analysis gets wrong.
+- **Incremental Builds** - Only rewrites generated files when their content changes, keeping rebuilds fast.
+- **XDK Signatures** - Finds the XDK functions and data in a new game automatically and writes its config.
+- **LTCG Libraries** - Supports games built with link time code generation, where library functions take their arguments in registers.
+
+### CPU and Kernel
+- **Guest Calls** - Adds indirect calls and host calls into game code, with the Xbox's 733 MHz timer and Pentium III CPUID.
+- **x87 Precision** - Follows the game's x87 precision setting, giving the same results as on the Xbox.
+- **CRT Math** - Computes the game's math functions on the host, fixing math that returned invalid results at random.
+- **Kernel** - Implements threads, waits, files, memory, crypto and EEPROM settings, with game files read from host folders or a disc image.
+- **Image Switching** - Relaunches into the matching executable when the game loads another XBE, keeping the window on screen without a gap.
+
+### Graphics
+- **Direct3D 8** - Implements Direct3D 8 as the XDK does it, including immediate mode draws, palettes, gamma ramps and Direct3D code built into the game.
+- **Native Direct3D 12 Renderer** - Translates the Xbox's vertex programs, pixel combiners and fixed function pipeline to HLSL, with rendering on its own thread.
+- **Ultrawide** - The aspect setting "screen" shows the frame at the screen's shape: screen shaped targets get more pixels across than down, and 2D drawn without a depth test that does not span the frame is squeezed into a centred 16:9 part; the game widens its own 3D views (PGR2: its aspect constant).
+- **Antialiasing** - FXAA on the finished frame, in the final blit, or MSAA 2x, 4x or 8x on the scene: big colour targets and their depth draw into multisampled twins, resolved before anything reads them.
+- **Console Accurate Depth** - Draws W-buffered depth (D3DZB_USEW) from each pixel's perspective correct w, with polygon offsets in its units and the XDK's scale for fixed function and pretransformed vertices; a depth buffer bigger than the colour target serves it, as on the console.
+- **Ordered Push Buffer Commands** - Reads raw commands a title pushed (vertex shader constants, visibility tests, immediate mode) before every state or constant set, so they apply in the console's order.
+- **Visibility Tests** - Counts visible pixels with occlusion queries and delivers reports when a title polls for them inside a frame.
+- **Render Targets** - Switches targets set with SetRenderTargetFast, copies cube faces drawn on the GPU into their cube, and keeps 8 bit targets as the console's B8.
+- **Vertex Inputs** - Supports SetVertexShaderInput and SetVertexShaderInputDirect, and declarations that read past the stride.
+- **Frame Pacing** - Paces each frame by the title's presentation interval, honours Swap's copy and finish flags and calls the swap callback.
+- **Draw Filters** - Allows a game to drop a draw, its depth test, or move it nearer with `gpu::g_draw_filter`, for game specific fixes.
+- **Renderer Extensions** - Allows a game to change render targets, add passes and add to the generated shaders through `gpu::Extension`, set with `gpu::SetExtension` from `GameInfo::init`.
+
+### Audio
+- **DirectSound** - Mixes sound in software through XAudio2, with Xbox ADPCM, streams, mix bins and the effects image.
+
+### Input
+- **Controller** - Supports Xbox, PlayStation and Switch controllers through SDL3, with hot plugging and rumble.
+- **Remapping** - Maps any physical controller input to any console input.
+- **Keyboard** - Plays as controller 1 with two keys per console input, remappable, saved in the settings file's `[keys]` table.
+
+### General
+- **Settings Window** - F1, or Back + Start on any controller, opens an in-game window, a section list and one full-width row per setting, for monitor, display mode, resolution, vsync, aspect ratio, render scale, anisotropic filtering, frame rate cap, FXAA, a frame counter, pausing on focus loss, the game's own options (with labels and help lines) and controls, saved at once. It also holds SMAA, a sharp scaling filter, smooth alpha edges with MSAA, enhanced world textures (twice the size, in the background) and a low latency swap chain, each off by default. Made for a controller through SDL, so every pad type works: LB/RB change section, the d-pad or left stick moves and changes values, A presses, Y clears a binding, B or Start closes. `tools/ui_preview` runs it with no GPU: it checks the navigation and writes a PNG of each page.
+- **Achievements** - A game lists achievements as conditions on guest memory in RetroAchievements' syntax (`GameInfo::achievements`); they are checked each frame, unlock with a pop-up, are listed in the settings window and kept in `achievements.toml`.
+- **Pause On Focus Loss** - The title waits at its next frame and the mixer is not pulled, so the game, its sound and its sample clock stand still while the window is behind another.
+- **Hard Disk** - Emulates the hard disk's partitions, formats the cache partition and keeps save games beside the exe.
+- **Disc Images** - Runs the game from an ISO in the `assets` folder, either a whole disc dump or the game partition, or from the extracted data files.
+- **System Link** - System Link can be played over LAN, or by directly connecting to a friend's IP address (`join_ip`). `XNET_TRACE=1` logs every network call.
+- **Bink Movies** - Fixes Bink movies playing too fast above 30 FPS and crashing on fast reads, for games that use Bink.
+- **Crash Dumps** - Writes crash dumps to a `CrashDumps` folder beside the exe.
+
+### Miscellaneous
+- **Boot Splash** - Place a `splash.png` (or `.bmp`) beside the exe to display a splash screen at launch.
+- **Diagnostics** - Logs frame timing with `XBE_PERF`, captures frames with F3 when `XBE_CAPTURE_DIR` is set (`XBE_CAPTURE_FRAMES`, `XBE_CAPTURE_DRAWS` for several frames or every draw), records draws with their input hashes at full speed with F4 (`XBE_FRAMELOG`), leaves out or alters draws by vertex shader (`XBE_DRAW_SKIP`, `XBE_DRAW_TEST`), logs vertex constant writes (`XBE_VSC`), lists the environment's switches at startup and enables the Direct3D 12 debug layer with `XBE_D3D12_DEBUG`.
+- **Headless Harness** - Builds and runs a game on Linux without a window, GPU, audio or controller, for testing.
+- **SDK Sync** - Keeps the `sdk/` copies in game repositories in step with this repository.
+
+## Credits
+
+- [XenonRecomp](https://github.com/hedge-dev/XenonRecomp) for the overridable function layout and instruction hooks this follows.
+- [Zydis](https://github.com/zyantific/zydis) for decoding x86 instructions, [toml++](https://github.com/marzer/tomlplusplus) for the configs, [Dear ImGui](https://github.com/ocornut/imgui) for the settings overlay and [SDL](https://github.com/libsdl-org/SDL) for the window, input and controllers.
+- [xemu](https://github.com/xemu-project/xemu) and [Cxbx-Reloaded](https://github.com/Cxbx-Reloaded/Cxbx-Reloaded) as references for the Xbox's hardware and API behaviour. This project does not use emulation or any emulator code.

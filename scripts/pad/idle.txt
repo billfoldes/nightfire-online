@@ -1,0 +1,3 @@
+# No presses: the machine sits where it booted. The net tests' first phase (scripts/net-loopback.sh) - the
+# language select is a standing screen with no attract movie, so two machines sitting in one session compare
+# cleanly (the title's ambient drift, net-diff.py's business, cannot pollute it)
