@@ -115,6 +115,16 @@ Newest first. Each entry: date, what changed, what was learned, what's next.
 
 ## Log
 
+### 2026-11-21 - Co-op: a multiplayer character no longer moves a level's textures
+- John (v2.0.3, playing Oddjob): The Exchange's first door's window drew black shapes. The texture table's next slot
+  is [0x19480C]; 0xDDF90 copies an alias ("TD") from the table's slot (low + 1), numbered as a whole load of the
+  archive would. The chosen characters' packs go in just before the level's main pack, so that pack's aliases into
+  its own earlier textures named a slot as many too early as the characters brought. Now (characters.cpp's
+  ShiftAliases) those aliases move past them. Headless, 07000005 with the host Oddjob: "8 textures in from slot 1D9;
+  1 of the level pack's aliases moved past them". To see in play: the window at that door.
+- Next: changing character mid-level the game's way (0x17A60 frees the instance, 0x11440 builds the new model);
+  Oddjob holding no weapon in co-op.
+
 ### 2026-11-21 - Co-op: no crash after a character change, no respawn under the level (v2.0.3)
 - John's co-op session (logs 006/271): player 2 picked another character mid-level and both machines crashed 8 s
   later on the same guest thread (a read of 0000000B, the stack through 0x159D0's skeleton code). The swap

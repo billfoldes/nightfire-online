@@ -360,6 +360,29 @@ bool Wanted(uint32_t level) {
            (level & 0xFFFFFF00) == 0x07000000 && level != 0x07000000 && level != 0x07000048;
 }
 
+// The texture table's next slot (0xDDF90 puts a pack's textures from it). The level's main pack loads after the
+// characters' packs, and its aliases (0xDDF90 reads an alias's slot - 1 + 1 out of the table) name slots as a whole
+// load of its own archive numbers them: those from `from` on are `added` further along now (a window in The Exchange
+// drew another texture's black shapes)
+constexpr uint32_t kNextSlot = 0x19480C;
+void ShiftAliases(uint32_t from, uint32_t added) {
+    uint32_t data = R32(kEntryData), size = R32(kEntrySize);
+    if (!added || !size || !data) return;
+    uint32_t pos = 4, moved = 0;
+    while (pos + 8 <= size) {
+        uint32_t head = R32(data + pos), len = head & 0xFFFFFF;
+        if (len < 4 || pos + len > size) break;
+        uint32_t word = R32(data + pos + 4);
+        if (TextureChunk(head >> 24) && len >= 8 && (word >> 16) == kAlias && (word & 0xFFFF) + 1 >= from) {
+            uint32_t slot = (word & 0xFFFF) + added;
+            if (slot <= 0xFFFF) W32(data + pos + 4, (word & 0xFFFF0000u) | slot), moved++;
+        }
+        pos += len;
+    }
+    LOGR("nightfire: co-op characters: %u textures in from slot %X; %u of the level pack's aliases moved past them",
+         added, from, moved);
+}
+
 void RegisterCharacters(X86Context& ctx, uint8_t* base) {
     // choice 1 is Bond, who plays as the mission's own model (view.cpp's ResolveCoopModel)
     std::vector<uint32_t> chosen;
@@ -561,7 +584,11 @@ X86_FUNC(sub_000BE910) {
 X86_FUNC(sub_000BE7B0) {
     if (!g_registered && R32(kEntryType) == 1 && kernel::G<uint8_t>(kArchiveMode)) {
         g_registered = true;
-        if (Wanted(g_level)) RegisterCharacters(ctx, base);
+        if (Wanted(g_level)) {
+            uint32_t from = R32(kNextSlot);
+            RegisterCharacters(ctx, base);
+            ShiftAliases(from, R32(kNextSlot) - from);
+        }
     }
     __imp__sub_000BE7B0(ctx, base);
 }
