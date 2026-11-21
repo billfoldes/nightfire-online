@@ -34,3 +34,4 @@ settings.toml
 
 # wrangler's local cache (npx wrangler deploy in tools/master)
 .wrangler/
+.xwin-cache/

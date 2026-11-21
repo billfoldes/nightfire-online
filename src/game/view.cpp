@@ -341,6 +341,8 @@ int CoopPlayers() {
 // (its triggers, the teleports after a cutscene) still work when the host is the one who left
 bool CoopGone(int s) { return s >= 0 && s < 4 && IsCoopCampaign() && net::PlayerLeft(s); }
 
+bool g_overlapping[4] = {};  // respawned on a teammate's spot, passed through (+0xCC 0x20) until they are apart
+
 bool AlivePlayer(uint32_t a) {
     return ValidPtr(a, 0xE0) && kernel::G<int16_t>(a + 0xD0) == 1 && ValidPtr(R32(a + 0xBC), 0x8E0) &&
            GetF(R32(a + 0xBC) + 0x824) > 0.0f;
@@ -1121,6 +1123,7 @@ X86_FUNC(sub_000AE870) {
         if (!ValidPtr(actor, 0xE0)) continue;
         uint32_t target_model = ResolveCoopModel(ctx, base, s, g_coop_default_model ? g_coop_default_model : 0x5000007u);
         g_applied_char[s] = net::CharacterFor(s);
+        if (s < 4) g_overlapping[s] = false;
         if (!target_model) continue;
         ApplyActorCharacterModel(ctx, base, actor, s, target_model);
         LOGR("nightfire: co-op player %d model set to %08X (choice %d)", s + 1, target_model, g_applied_char[s] + 1);
@@ -1274,11 +1277,12 @@ X86_FUNC(sub_0009F0B0) {
             uint32_t inner = R32(actor + 0xBC);
             uint32_t scratch = (ctx.esp - 0x800) & ~15u;
             uint32_t pos_va = scratch, rot_va = scratch + 0x20;
-            // never on the teammate: two players in one place hold each other there
-            static constexpr float kOffsets[4][2] = {{0.0f, 1.2f}, {0.9f, -0.6f}, {-0.9f, -0.6f}, {0.0f, -1.2f}};
-            SetF(pos_va + 0, GetF(target + 0x24) + kOffsets[s][0]);
+            // on the teammate's own spot, the one place sure to have a floor (a spot beside them can be behind a
+            // wall or past a ledge, under the level); two players in one place hold each other there, so the
+            // respawned one is passed through (+0xCC 0x20, as a dropped-out player) until they are apart
+            SetF(pos_va + 0, GetF(target + 0x24));
             SetF(pos_va + 4, GetF(target + 0x28));
-            SetF(pos_va + 8, GetF(target + 0x2C) + kOffsets[s][1]);
+            SetF(pos_va + 8, GetF(target + 0x2C));
             SetF(rot_va + 0, GetF(target + 0x3C));
             SetF(rot_va + 4, GetF(target + 0x40));
             SetF(rot_va + 8, GetF(target + 0x44));
@@ -1292,7 +1296,8 @@ X86_FUNC(sub_0009F0B0) {
                 SetF(inner + 0x838, 0.0f);
             }
             kernel::G<uint8_t>(actor + 0xDB) = 0x03;
-            W32(actor + 0xCC, R32(actor + 0xCC) & ~0x20u);
+            W32(actor + 0xCC, R32(actor + 0xCC) | 0x20u);
+            g_overlapping[s] = true;
             g_coop_respawning = true;
             CallGuest(ctx, base, __imp__sub_000AC7E0, {actor, pos_va, rot_va, MoveMode(target)});
             g_coop_respawning = false;
@@ -1300,7 +1305,9 @@ X86_FUNC(sub_0009F0B0) {
             DrawWeapon(actor, s);
             ctx.eax = 1;
             ctx.esp += 4;
-            LOGR("nightfire: co-op player %d respawned beside teammate", s + 1);
+            LOGR("nightfire: co-op player %d respawned on a teammate at %.1f,%.1f,%.1f (now %.1f,%.1f,%.1f)", s + 1,
+                 GetF(pos_va + 0), GetF(pos_va + 4), GetF(pos_va + 8), GetF(actor + 0x24), GetF(actor + 0x28),
+                 GetF(actor + 0x2C));
             return;
         }
         // all co-op players are down -> let sub_0009F0B0 return 0 so sub_000AC690 triggers Mission Failed
@@ -1433,24 +1440,11 @@ X86_FUNC(sub_000AD520) {
         int ch = net::CharacterFor(s);
         if (ch != g_applied_char[s]) {
             g_applied_char[s] = ch;
-            // a level has the characters it registered as it loaded (a match all 29): another waits for the next level
-            uint32_t chosen = ch >= 0 && ch < 29 ? R32(0x1637C0u + uint32_t(ch) * 0x10u) : 0;
-            if (chosen && !CallGuest(ctx, base, __imp__sub_0006B500, {chosen})) chosen = 0;
-            uint32_t target_model = 0;
-            if (IsCoopCampaign()) {
-                target_model = ch <= 0 ? (g_coop_default_model ? g_coop_default_model : 0x5000007u) : chosen;
-            } else if (ch >= 0 && ch < 29) {
-                W32(kCombatantCfg + uint32_t(s) * kCombatantSize + 0x24, uint32_t(ch));
-                target_model = chosen;
-            }
-            if (target_model) {
-                ApplyActorCharacterModel(ctx, base, outer, s, target_model);
-                LOGR("nightfire: player %d changed character in-game -> choice %d (model %08X)", s + 1, ch + 1,
-                     target_model);
-            } else if (ch > 0 && ch < 29) {
-                LOGR("nightfire: player %d's choice %d (%s) is not in this level; it waits for the next one", s + 1,
-                     ch + 1, net::CharacterChoiceName(uint32_t(ch) + 1));
-            }
+            // a player keeps their model to the level's or match's end: the actor's skeleton data (0x159D0's, sized
+            // by the record's bone count) is built for the model it has, and another record over it overran the
+            // game's heap (both machines of a co-op session crashed 8 s after one). A match's +0x24 is set as it loads
+            LOGR("nightfire: player %d's choice %d (%s) is theirs from the next %s", s + 1, ch + 1,
+                 net::CharacterChoiceName(uint32_t(ch + 1)), IsCoopCampaign() ? "level" : "match");
         }
         if (IsCoopCampaign()) ApplyPlayerHands(ctx, base, outer, s);
     }
@@ -1481,6 +1475,21 @@ X86_FUNC(sub_000AD520) {
     if (gone) CarryGone(ctx, base, outer, s);
     else if (g_was_gone[s] && ValidPtr(outer, 0xE0)) ComeBack(outer, s);
     g_was_gone[s] = gone;
+    if (g_overlapping[s] && !gone && ValidPtr(outer, 0xE0) && kernel::G<int16_t>(outer + 0xD0) == 1) {
+        bool apart = true;
+        for (int i = 0; i < CoopPlayers() && apart; i++) {
+            uint32_t a = R32(kOuterActors + uint32_t(i) * 4);
+            if (i == s || CoopGone(i) || !ValidPtr(a, 0xE0)) continue;
+            float dx = GetF(a + 0x24) - GetF(outer + 0x24), dz = GetF(a + 0x2C) - GetF(outer + 0x2C);
+            apart = dx * dx + dz * dz >= 1.0f;
+        }
+        if (apart) {
+            g_overlapping[s] = false;
+            W32(outer + 0xCC, R32(outer + 0xCC) & ~0x20u);
+            LOGR("nightfire: co-op player %d is clear of the others again, at %.1f,%.1f,%.1f", s + 1,
+                 GetF(outer + 0x24), GetF(outer + 0x28), GetF(outer + 0x2C));
+        }
+    }
 }
 
 // a player's death (cdecl: outer, killer): out of a match it sets the music's death cue (0xCBCE0(6, 1), [0x29A198]),
@@ -2150,12 +2159,14 @@ void SaveViewState(snapshot::Writer& w) {
     w.Pod(g_slot), w.Pod(g_active_slot), w.Pod(g_hud_shown), w.Pod(g_weapon_held), w.Pod(g_coop_spawn_pos);
     w.Pod(g_coop_spawn_rot), w.Pod(g_coop_frames), w.Pod(g_coop_default_model), w.Pod(g_applied_char);
     w.Pod(g_mission_hands), w.Pod(g_mission_skin), w.Pod(g_death_held), w.Pod(g_down_ticks), w.Pod(g_was_gone);
+    w.Pod(g_overlapping);
     w.Pod(g_door_level), w.Pod(g_door_hints), w.Pod(g_watch_hands), w.Pod(g_low_bots);
 }
 void LoadViewState(snapshot::Reader& r) {
     r.Pod(g_slot), r.Pod(g_active_slot), r.Pod(g_hud_shown), r.Pod(g_weapon_held), r.Pod(g_coop_spawn_pos);
     r.Pod(g_coop_spawn_rot), r.Pod(g_coop_frames), r.Pod(g_coop_default_model), r.Pod(g_applied_char);
     r.Pod(g_mission_hands), r.Pod(g_mission_skin), r.Pod(g_death_held), r.Pod(g_down_ticks), r.Pod(g_was_gone);
+    r.Pod(g_overlapping);
     r.Pod(g_door_level), r.Pod(g_door_hints), r.Pod(g_watch_hands), r.Pod(g_low_bots);
 }
 }  // namespace nf

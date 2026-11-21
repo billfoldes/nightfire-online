@@ -83,14 +83,15 @@ int64_t NowMs() {
 }
 
 constexpr uint32_t kMagic = 0x4E464E31;  // "NFN1"
-constexpr uint16_t kVersion = 27;  // 1 (and 2, its Driving.xbe) sent one tick a bundle; 3 (4) no name or handicap;
+constexpr uint16_t kVersion = 29;  // 1 (and 2, its Driving.xbe) sent one tick a bundle; 3 (4) no name or handicap;
                                    // 5 (6) no co-op friendly fire; 7 (8) no rejoining; 9 (10) no host's saves;
                                    // 11 (12) the on-foot sound by the mixer; 13 (14) a driving load's clock counted,
                                    // the car's copied shots paid from player 1's weapon; 15 (16) a seat no one took
                                    // played, no bots' character; 17 (18) no bots below slot 4; 19 (20) the
                                    // host's character overrides per slot, no bot settings (kBotSettings); 21
                                    // (22) no unlock_multiplayer; 23 (24) no net_quit_together nor kRestart;
-                                   // 25 (26) no net_bots Fill to the Players count
+                                   // 25 (26) no net_bots Fill to the Players count; 27 (28) co-op respawns beside
+                                   // the teammate, character changes mid-level
 constexpr uint8_t kHello = 1,   // a joiner asking to play, before boot
     kWelcome = 2,               // the host's answer: the controller it is given, the input delay
     kStart = 3,                 // the host: boot, with the session's player count in the sequence
@@ -3128,8 +3129,8 @@ void Pad(int port, input::Pad& p) {
             logx::Flush();
             std::_Exit(0);
         }
-        // NF_NET_CHANGE=tick,name,handicap (the harness, which has no settings window): at this machine's tick, its
-        // net_name and net_handicap change as the window would change them
+        // NF_NET_CHANGE=tick,name,handicap[,character] (the harness, which has no settings window): at this machine's
+        // tick, its net_name, net_handicap (and net_character) change as the window would change them
         static const std::string change = [] {
             const char* e = std::getenv("NF_NET_CHANGE");
             return std::string(e ? e : "");
@@ -3139,8 +3140,11 @@ void Pad(int port, input::Pad& p) {
             if (a != std::string::npos && b != std::string::npos) {
                 my_name = change.substr(a + 1, b - a - 1);
                 my_handicap = std::min<uint32_t>(uint32_t(std::max(0, std::atoi(change.c_str() + b + 1))), kHandicapChoices - 1);
+                if (size_t c = change.find(',', b + 1); c != std::string::npos)
+                    my_character = std::min<uint32_t>(uint32_t(std::max(0, std::atoi(change.c_str() + c + 1))), kCharacterChoices - 1);
                 NameChanged();
-                LOGR("net: tick %u: net_name %s, net_handicap %u (NF_NET_CHANGE)", g.mine, my_name.c_str(), my_handicap);
+                LOGR("net: tick %u: net_name %s, net_handicap %u, net_character %u (NF_NET_CHANGE)", g.mine, my_name.c_str(),
+                     my_handicap, my_character);
             }
         }
         // NF_NET_BOT_CHANGE=tick:setting=value,... (the harness): at that tick the host's bot settings change

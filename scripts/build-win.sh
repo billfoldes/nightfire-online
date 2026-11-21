@@ -61,7 +61,8 @@ if [ ! -f "$MSVC/sdk/lib/um/x86_64/d3d12.lib" ]; then
     curl -fsSL https://github.com/Jake-Shadle/xwin/releases/download/0.6.5/xwin-0.6.5-x86_64-unknown-linux-musl.tar.gz \
       | tar -xz -C "$WSDK/bin" --strip-components=1
   fi
-  "$WSDK/bin/xwin" --accept-license --arch x86_64 splat --output "$MSVC" --copy
+  # the newest SDK in Microsoft's manifest (10.0.26100) has no x86_64 headers package xwin 0.6.5 can find
+  "$WSDK/bin/xwin" --accept-license --arch x86_64 --sdk-version "${XWIN_SDK:-10.0.22621}" splat --output "$MSVC" --copy
 fi
 
 # 3. Prebuilt SDL3 VC devel package (fetched once into .local/win-sdk/SDL3-3.4.16)

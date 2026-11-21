@@ -54,7 +54,7 @@ launch() {  # $1 = machine, $2 = pad, then the env
   ) > "$RUN/$k/run.out" 2>&1 &
 }
 # HOST_NAME / JOIN_NAME: the machines' net_name (one word); HOST_HANDICAP / JOIN_HANDICAP: their net_handicap (0..8);
-# JOIN_CHANGE=tick,name,handicap: the joiner changes both at that tick of the session (NF_NET_CHANGE)
+# JOIN_CHANGE=tick,name,handicap[,character]: the joiner changes them at that tick of the session (NF_NET_CHANGE)
 # HOST_PAD / JOIN_PAD: other pads for the two (scripts/pad/mp-match-stay.txt and mp-quit.txt: the joiner quits the match)
 # HOST_PLAYERS: the host's net_players (seats; 2 by default: a larger one starts with the two when its HOST_WAIT ends);
 # HOST_ENV: more of the host's settings (NF_NET_BOT_CHARACTER=12 ...)

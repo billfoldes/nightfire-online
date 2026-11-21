@@ -49,7 +49,11 @@ int GuidedBy() { return 0; }
 // `ret` function) tells the title screen handler to open the Main Menu (NightFire / Multiplayer / Codenames) directly.
 X86_EXTERN_FUNC(__imp__sub_0007CD50);
 X86_FUNC(sub_0007CD50) {
-    if (nf::skip_tutorial || nf::net::Active()) {  // a session's machines all go the same way
+    static const bool level_test = [] {  // NF_LEVEL (sub_000BDDF0's) takes the tutorial's place
+        const char* e = std::getenv("NF_LEVEL");
+        return e && *e;
+    }();
+    if (!level_test && (nf::skip_tutorial || nf::net::Active())) {  // a session's machines all go the same way
         kernel::G<uint8_t>(0x17D580) = 0;
         ctx.eax = 0;
         LOGR("nightfire: skipped forced first-boot Paris tutorial -> opening Main Menu");

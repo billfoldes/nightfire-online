@@ -28,7 +28,8 @@ Newest first. Each entry: date, what changed, what was learned, what's next.
   (or Random), shown in and edited from the game's bot menu, and Bots 7 and 8's fields; unlock_multiplayer opens
   every character, map and scenario (the host's)
 - Campaign co-op (net, src/game/view.cpp, src/game/characters.cpp): up to 4 players through the campaign on the
-  mission's own models plays again (2026-11-10 retest on both PCs). The chosen multiplayer characters now load with
+  mission's own models plays again (2026-11-10 retest on both PCs); a dead player respawns on a teammate's own spot,
+  and a character change waits for the next level (2026-11-21). The chosen multiplayer characters now load with
   the level from a match's archive, their textures' aliases resolved, and the players wear them with Bond's
   hardpoints as in a match: proven headless on two machines (Drake and Rook, Bond Tux and Kiko in the second level),
   single player unchanged. Every co-op player moves with a match's third-person animations by weapon (they held
@@ -113,6 +114,25 @@ Newest first. Each entry: date, what changed, what was learned, what's next.
 - Data: `eurocom/filesys.d00`-`d10` and `eurocom/25_fps` (on foot), `driving/*.viv`, `.mus`, `.spe` (driving)
 
 ## Log
+
+### 2026-11-21 - Co-op: no crash after a character change, no respawn under the level (v2.0.3)
+- John's co-op session (logs 006/271): player 2 picked another character mid-level and both machines crashed 8 s
+  later on the same guest thread (a read of 0000000B, the stack through 0x159D0's skeleton code). The swap
+  (sub_000AD520) put the new model's record on an actor whose skeleton data was built for the old one. Headless
+  (.local/coop-level.sh 07000005, the joiner Ninja then Bond at tick 2400 through NF_NET_CHANGE's new character
+  field): the old code crashed both machines 13 s after the change; now the choice waits for the next level (co-op)
+  or match, logged "is theirs from the next level", and both played on 78 s. Matches no longer swap mid-match
+  either (the same skeleton; net_character's help always said the next match or level).
+- His second session (007/272): a respawn left a player under the level. A co-op respawn was put 1.2 beside the
+  teammate, which can be past a ledge or a wall; now it is on the teammate's own spot, the respawned player passed
+  through (+0xCC 0x20, a dead player's) until the two are 1.0 apart (g_overlapping, in the snapshot). The respawn
+  line logs the position. Headless (health poked to 0): player 2 respawned on player 1 at y 25.0 on both machines,
+  stepped away and was "clear of the others again", the machines in step. kVersion 29.
+- "T2" as everyone's name: no default of ours; it was typed once into a settings.toml on the shared folder the
+  joiner plays from. An empty name already shows Player N.
+- NF_LEVEL works in a session again (v2.0.1's always-skipped tutorial took the request it replaces).
+  scripts/build-win.sh pins the Windows SDK to 10.0.22621 (xwin 0.6.5 finds no headers in 10.0.26100's).
+  build-win, SMOKE OK.
 
 ### 2026-11-20 - Bots fill the places of players who did not come (v2.0.2)
 - John: a host who started early with fewer players than it asked for got only the bots it had set. net_bots has a
