@@ -539,6 +539,14 @@ void LogCharacterTable(X86Context& ctx, uint8_t* base, const char* when) {
         LOGR("nightfire: diag table %s: [%2u] \"%s\" model %08X +4 %08X +8 %08X need %u loaded %08X", when, i + 1,
              net::CharacterChoiceName(i + 1), model, R32(e + 4), R32(e + 8), unsigned(kernel::G<uint8_t>(e + 0xC)),
              loaded);
+        if (ValidPtr(loaded, 0x30)) {
+            uint32_t hp = R32(loaded + 0x1C), n = kernel::G<uint8_t>(loaded + 0x2B);
+            char ids[160] = "";
+            for (uint32_t k = 0; k < n && k < 16 && ValidPtr(hp + k * 36, 36); k++)
+                std::snprintf(ids + std::strlen(ids), sizeof ids - std::strlen(ids), " %X", R32(hp + k * 36));
+            LOGR("nightfire: diag table %s: [%2u] kind %u, %u hardpoints:%s", when, i + 1,
+                 unsigned(kernel::G<uint8_t>(loaded + 0x2C)), n, ids);
+        }
     }
     for (int s = 0; s < CoopPlayers(); s++)
         LOGR("nightfire: diag table %s: player %d chose %d", when, s + 1, net::CharacterFor(s) + 1);
@@ -1440,11 +1448,27 @@ X86_FUNC(sub_000AD520) {
         int ch = net::CharacterFor(s);
         if (ch != g_applied_char[s]) {
             g_applied_char[s] = ch;
-            // a player keeps their model to the level's or match's end: the actor's skeleton data (0x159D0's, sized
-            // by the record's bone count) is built for the model it has, and another record over it overran the
-            // game's heap (both machines of a co-op session crashed 8 s after one). A match's +0x24 is set as it loads
-            LOGR("nightfire: player %d's choice %d (%s) is theirs from the next %s", s + 1, ch + 1,
-                 net::CharacterChoiceName(uint32_t(ch + 1)), IsCoopCampaign() ? "level" : "match");
+            // the model rebuilt as the weapon change rebuilds a view model: the actor's skeleton data (0x159D0's,
+            // sized by the record's bone count) is built for the model it has, and another record put under it
+            // overran the game's heap (both machines of a co-op session crashed 8 s after one). A character this
+            // level did not load waits for the next one (a match's +0x24 is set as it loads)
+            uint32_t chosen = ch >= 0 && ch < 29 ? R32(0x1637C0u + uint32_t(ch) * 0x10u) : 0;
+            if (chosen && !CallGuest(ctx, base, __imp__sub_0006B500, {chosen})) chosen = 0;
+            uint32_t target = IsCoopCampaign() && ch <= 0 ? (g_coop_default_model ? g_coop_default_model : 0x5000007u)
+                                                           : chosen;
+            uint32_t b8 = R32(outer + 0xB8);
+            uint32_t worn = ValidPtr(b8, 0x80) && ValidPtr(R32(b8 + 0x74), 4) ? R32(R32(b8 + 0x74)) : 0;
+            if (target && target != worn && ValidPtr(b8, 0x80)) {
+                KeepWeapon(outer, s);
+                CallGuest(ctx, base, __imp__sub_00017A60, {outer});
+                CallGuest(ctx, base, sub_00011440, {outer, target});
+                DrawWeapon(outer, s);
+                LOGR("nightfire: player %d changed character in-game -> choice %d (model %08X, was %08X)", s + 1,
+                     ch + 1, target, worn);
+            } else if (target != worn) {
+                LOGR("nightfire: player %d's choice %d (%s) is not in this level; it waits for the next one", s + 1,
+                     ch + 1, net::CharacterChoiceName(uint32_t(ch + 1)));
+            }
         }
         if (IsCoopCampaign()) ApplyPlayerHands(ctx, base, outer, s);
     }

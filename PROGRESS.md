@@ -115,6 +115,18 @@ Newest first. Each entry: date, what changed, what was learned, what's next.
 
 ## Log
 
+### 2026-11-21 - Characters change mid-level again, the game's way; every character holds a gun in co-op
+- John: v2.0.3's wait for the next level took away changing character during a level. The change (sub_000AD520)
+  now rebuilds the model as the weapon change rebuilds a view model: the weapon kept (KeepWeapon), 0x17A60 frees
+  the instance and its attachments, 0x11440 builds the new one (its skeleton data sized for it), the weapon drawn
+  again. The spawn (0xACCFC) builds a player's model through 0x11440 too, which is why level start never crashed.
+  A choice the level did not load waits for the next one. Headless (07000005): Ninja to Bond and Bond to Oddjob at
+  tick 2400, both machines played 78 s on in step (the bare record swap crashed both 13 s after). kVersion 31.
+- Oddjob with no weapon: not reproduced. All 28 multiplayer characters (choices 2-29), the host's as the joiner
+  sees them at 07000005's start, hold the P99; Oddjob too after a respawn. 0x11200 gives them all Bond's 60
+  hardpoints (kind +0x2C 0 or 1), every level load ([0x1D6A65] cleared by 0x14B80). The character table's diag
+  lines now give each loaded record's kind and hardpoints. Waiting on John: which weapon, level and moment.
+
 ### 2026-11-21 - Co-op: a multiplayer character no longer moves a level's textures
 - John (v2.0.3, playing Oddjob): The Exchange's first door's window drew black shapes. The texture table's next slot
   is [0x19480C]; 0xDDF90 copies an alias ("TD") from the table's slot (low + 1), numbered as a whole load of the
