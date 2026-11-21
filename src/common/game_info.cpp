@@ -600,7 +600,7 @@ const app::GameInfo app::kGame = {
                  "Your name to the other players online, in co-op and matches (15 letters at most); empty shows Player 1, Player 2 and so on. A change reaches the others at once.",
                  0, nullptr, "You (this PC)", &net::my_name, "Player N", net::NameChanged},
                 {"net_character", nullptr, &net::my_character, "My character",
-                 "Your character model online, in multiplayer matches and in campaign co-op (Players 5 to 10 have no character box on the join screen). Applies at once when the level has that character (in co-op Bond and the characters the players had as it loaded), else at the next match or level.",
+                 "Your character model online, in multiplayer matches and in campaign co-op (Players 5 to 10 have no character box on the join screen). Applies at once, in matches and in campaign co-op.",
                  net::kCharacterChoices, net::CharacterChoiceName},
                 {"net_handicap", nullptr, &net::my_handicap, "My health handicap",
                  "Your health at the start of an online match: 100 plus this. Join screen's uses your join box's Health Handicap (Players 5 to 10 have none: 100). Not in co-op. Applies at the next match.",

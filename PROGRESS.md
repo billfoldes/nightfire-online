@@ -115,6 +115,17 @@ Newest first. Each entry: date, what changed, what was learned, what's next.
 
 ## Log
 
+### 2026-11-21 - Co-op: any character, mid-level (loaded when it is picked)
+- John: changing mid-level worked (v2.0.4), but only to Bond or a character the level loaded with. Now a character
+  the level lacks is loaded when it is picked (characters.cpp's LoadCoopCharacter): its pack and model, and the
+  multiplayer hands and skins if the level has none, read from 07000023.bin and handed to the loader's dispatcher
+  (0xBE7B0) with archive mode (0x2ADF70) on for it, so 0xDCA30 returns the entry; their textures go after the
+  level's (the table's 2048 slots checked first), and the new models get Bond's hardpoints as 0x11200 gives them.
+  Every machine loads it at the same tick (the choice travels with the session's input).
+- Headless (07000005, the joiner watching): the host Bond to Oddjob (7 entries, 308 KB, 8 textures, 33 ms) and Ninja
+  to Drake (2 entries, 142 KB, 50 ms): both machines swapped, in step to the run's end, the new model textured and
+  holding the P99. kVersion 33. Not tried: a level near the heap's end (a load with no room logs it and waits).
+
 ### 2026-11-21 - Characters change mid-level again, the game's way; every character holds a gun in co-op
 - John: v2.0.3's wait for the next level took away changing character during a level. The change (sub_000AD520)
   now rebuilds the model as the weapon change rebuilds a view model: the weapon kept (KeepWeapon), 0x17A60 frees

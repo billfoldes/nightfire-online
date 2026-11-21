@@ -383,6 +383,65 @@ void ShiftAliases(uint32_t from, uint32_t added) {
          added, from, moved);
 }
 
+struct Want {
+    uint32_t id;
+    uint8_t type;
+};
+
+// the entries through the level loader's own dispatcher, each from a block of the level heap, in the archive's
+// order as a match loads them: animations before their records, packs before the models whose setup (0x144C0) looks
+// their textures up
+void LoadEntries(X86Context& ctx, uint8_t* base, Reader& rd, std::vector<Want>& want, uint32_t& bytes, uint32_t& done,
+                 uint32_t& aliases, uint32_t& blank) {
+    std::stable_sort(want.begin(), want.end(), [](const Want& a, const Want& b) {
+        const Entry *x = Find(a.id, a.type), *y = Find(b.id, b.type);
+        return (x ? x->at : ~0u) < (y ? y->at : ~0u);
+    });
+    uint32_t saved[5] = {R32(kEntryData), R32(kEntrySize), R32(kEntryEnd), R32(kEntryType), R32(kEntryId)};
+    std::vector<uint8_t> pack;
+    for (const Want& w : want) {
+        const Entry* e = Find(w.id, w.type);
+        if (!e) {
+            LOGE("nightfire: co-op characters: %08X is not in %s", w.id, kArchive);
+            continue;
+        }
+        pack.resize(e->size);
+        bool read = TexturesPack(w.type) ? Rebuild(rd, *e, pack, aliases, blank) : rd.Bytes(e->at, pack.data(), e->size);
+        if (!read) {
+            LOGE("nightfire: co-op characters: %08X could not be read from %s", w.id, kArchive);
+            break;
+        }
+        uint32_t size = uint32_t(pack.size());
+        uint32_t data = Call(ctx, base, __imp__sub_00070AE0, {size, 0x1204u, 0x80u});
+        if (!data) {
+            LOGE("nightfire: co-op characters: no room in the level heap for %08X (%u bytes)", w.id, size);
+            break;
+        }
+        std::memcpy(&kernel::G<uint8_t>(data), pack.data(), size);
+        W32(kEntryData, data);
+        W32(kEntrySize, size);
+        W32(kEntryEnd, data + size);
+        W32(kEntryType, w.type);
+        W32(kEntryId, w.id);
+        for (int step = 0; step < 1000 && !(Call(ctx, base, __imp__sub_000BE7B0, {}) & 0xFF); step++) {
+        }
+        bytes += size;
+        done++;
+    }
+    W32(kEntryData, saved[0]), W32(kEntrySize, saved[1]), W32(kEntryEnd, saved[2]);
+    W32(kEntryType, saved[3]), W32(kEntryId, saved[4]);
+}
+
+// a pack's texture count (its texture table, 12 bytes a texture), 0 for none
+uint32_t PackTextures(Reader& rd, const Entry& e) {
+    uint8_t head[8];
+    if (e.size < 0x20 || !rd.Bytes(e.at + 4, head, 4) || !rd.Bytes(e.at + 4 + (Le32(head) & 0xFFFFFF), head + 4, 4) ||
+        (Le32(head + 4) >> 24) != kTexTable)
+        return 0;
+    uint32_t table = Le32(head + 4) & 0xFFFFFF;
+    return table >= 4 ? (table - 4) / 12 : 0;
+}
+
 void RegisterCharacters(X86Context& ctx, uint8_t* base) {
     // choice 1 is Bond, who plays as the mission's own model (view.cpp's ResolveCoopModel)
     std::vector<uint32_t> chosen;
@@ -403,10 +462,6 @@ void RegisterCharacters(X86Context& ctx, uint8_t* base) {
         record(s->other);
     }
 
-    struct Want {
-        uint32_t id;
-        uint8_t type;
-    };
     std::vector<Want> want;
     std::vector<uint32_t> models;
     if (!chosen.empty()) {
@@ -451,47 +506,8 @@ void RegisterCharacters(X86Context& ctx, uint8_t* base) {
             if (!listed) want.push_back({anim, 4}), animations++;
         }
     }
-    // in the archive's order, as a match loads them: animations before their records, packs before the models
-    // whose setup (0x144C0) looks their textures up
-    std::stable_sort(want.begin(), want.end(), [](const Want& a, const Want& b) {
-        const Entry *x = Find(a.id, a.type), *y = Find(b.id, b.type);
-        return (x ? x->at : ~0u) < (y ? y->at : ~0u);
-    });
-
-    uint32_t saved[5] = {R32(kEntryData), R32(kEntrySize), R32(kEntryEnd), R32(kEntryType), R32(kEntryId)};
     uint32_t bytes = 0, done = 0, aliases = 0, blank = 0;
-    std::vector<uint8_t> pack;
-    for (const Want& w : want) {
-        const Entry* e = Find(w.id, w.type);
-        if (!e) {
-            LOGE("nightfire: co-op characters: %08X is not in %s", w.id, kArchive);
-            continue;
-        }
-        pack.resize(e->size);
-        bool read = TexturesPack(w.type) ? Rebuild(rd, *e, pack, aliases, blank) : rd.Bytes(e->at, pack.data(), e->size);
-        if (!read) {
-            LOGE("nightfire: co-op characters: %08X could not be read from %s", w.id, kArchive);
-            break;
-        }
-        uint32_t size = uint32_t(pack.size());
-        uint32_t data = Call(ctx, base, __imp__sub_00070AE0, {size, 0x1204u, 0x80u});
-        if (!data) {
-            LOGE("nightfire: co-op characters: no room in the level heap for %08X (%u bytes)", w.id, size);
-            break;
-        }
-        std::memcpy(&kernel::G<uint8_t>(data), pack.data(), size);
-        W32(kEntryData, data);
-        W32(kEntrySize, size);
-        W32(kEntryEnd, data + size);
-        W32(kEntryType, w.type);
-        W32(kEntryId, w.id);
-        for (int step = 0; step < 1000 && !(Call(ctx, base, __imp__sub_000BE7B0, {}) & 0xFF); step++) {
-        }
-        bytes += size;
-        done++;
-    }
-    W32(kEntryData, saved[0]), W32(kEntrySize, saved[1]), W32(kEntryEnd, saved[2]);
-    W32(kEntryType, saved[3]), W32(kEntryId, saved[4]);
+    LoadEntries(ctx, base, rd, want, bytes, done, aliases, blank);
 
     for (uint32_t ch : chosen) {
         uint32_t model = R32(kTable + ch * 0x10);
@@ -593,8 +609,63 @@ X86_FUNC(sub_000BE7B0) {
     __imp__sub_000BE7B0(ctx, base);
 }
 
-// snapshots (src/game/hooks.cpp): the archive loading and whether its characters are in
 namespace nf {
+// A character a co-op player picks during a level, loaded then (every machine at the same tick: a player's choice
+// changes with the session's input): its pack and model, and the multiplayer hands and their skins if the level has
+// none yet, through the loader's dispatcher in archive mode (0xDCA30 then hands it the entry). Their textures go
+// after the level's in the texture table (2048 slots, 0x2ABE80-0x2ADE80), the level's aliases untouched. 0x11200 ran
+// as the level loaded: the new models get Bond's hardpoints here as it gives them
+bool LoadCoopCharacter(X86Context& ctx, uint8_t* base, uint32_t ch) {
+    if (ch < 1 || ch >= kCharacters) return false;
+    uint32_t model = R32(kTable + ch * 0x10), pack = R32(kTable + ch * 0x10 + 4);
+    if (Registered(ctx, base, model)) return true;
+    auto start = std::chrono::steady_clock::now();
+    Reader rd(ctx, base);
+    if (!rd.Open()) return false;
+    if (!g_dir.tried) {
+        g_dir.tried = true;
+        g_dir.ok = ReadDirectory(rd);
+    }
+    if (!g_dir.ok) return false;
+
+    std::vector<Want> want;
+    for (uint32_t i = 0; i < 4; i++)
+        if (!Registered(ctx, base, R32(kHandTextures + (4 + i) * 4))) want.push_back({kHandPacks[i], 2});
+    want.push_back({pack, 2});
+    if (!Registered(ctx, base, kMpHands)) want.push_back({kMpHands, 3});
+    want.push_back({model, 3});
+    uint32_t textures = 0;
+    for (const Want& w : want)
+        if (const Entry* e = Find(w.id, w.type); e && TexturesPack(w.type)) textures += PackTextures(rd, *e);
+    if (R32(kNextSlot) + textures > 2048) {
+        LOGR("nightfire: co-op character %u (%s): no room in the texture table (%u slots used, %u more); it waits for "
+             "the next level", ch + 1, net::CharacterChoiceName(ch + 1), R32(kNextSlot), textures);
+        return false;
+    }
+
+    uint8_t mode = kernel::G<uint8_t>(kArchiveMode);
+    kernel::G<uint8_t>(kArchiveMode) = 1;
+    uint32_t bytes = 0, done = 0, aliases = 0, blank = 0;
+    LoadEntries(ctx, base, rd, want, bytes, done, aliases, blank);
+    kernel::G<uint8_t>(kArchiveMode) = mode;
+
+    uint32_t bond = Call(ctx, base, __imp__sub_0006B500, {0x5000007u});
+    for (uint32_t id : {kMpHands, model}) {
+        uint32_t rec = Call(ctx, base, __imp__sub_0006B500, {id});
+        if (bond && rec && kernel::G<uint8_t>(rec + 0x2C) <= 1) {
+            kernel::G<uint8_t>(rec + 0x2B) = kernel::G<uint8_t>(bond + 0x2B);
+            W32(rec + 0x1C, R32(bond + 0x1C));
+        }
+    }
+    bool ok = Registered(ctx, base, model);
+    auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count();
+    LOGR("nightfire: co-op character %u (%s) loaded mid-level: model %08X %s, %u of %zu entries (%u KB, %u textures) "
+         "in %lld ms", ch + 1, net::CharacterChoiceName(ch + 1), model, ok ? "registered" : "missing", done,
+         want.size(), bytes / 1024, textures, (long long)ms);
+    return ok;
+}
+
+// snapshots (src/game/hooks.cpp): the archive loading and whether its characters are in
 void SaveCharactersState(snapshot::Writer& w) { w.Pod(g_level), w.Pod(g_registered); }
 void LoadCharactersState(snapshot::Reader& r) { r.Pod(g_level), r.Pod(g_registered); }
 }  // namespace nf

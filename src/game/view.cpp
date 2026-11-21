@@ -109,6 +109,9 @@ X86_EXTERN_FUNC(__imp__sub_000E0EC0);
 X86_EXTERN_FUNC(__imp__sub_000E7130);
 
 namespace net = nf::net;
+namespace nf {
+bool LoadCoopCharacter(X86Context& ctx, uint8_t* base, uint32_t ch);  // src/game/characters.cpp
+}
 
 namespace {
 using kernel::R32;
@@ -1453,7 +1456,9 @@ X86_FUNC(sub_000AD520) {
             // overran the game's heap (both machines of a co-op session crashed 8 s after one). A character this
             // level did not load waits for the next one (a match's +0x24 is set as it loads)
             uint32_t chosen = ch >= 0 && ch < 29 ? R32(0x1637C0u + uint32_t(ch) * 0x10u) : 0;
-            if (chosen && !CallGuest(ctx, base, __imp__sub_0006B500, {chosen})) chosen = 0;
+            if (chosen && !CallGuest(ctx, base, __imp__sub_0006B500, {chosen}) &&
+                !(IsCoopCampaign() && nf::LoadCoopCharacter(ctx, base, uint32_t(ch))))
+                chosen = 0;
             uint32_t target = IsCoopCampaign() && ch <= 0 ? (g_coop_default_model ? g_coop_default_model : 0x5000007u)
                                                            : chosen;
             uint32_t b8 = R32(outer + 0xB8);
