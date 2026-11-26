@@ -15,6 +15,8 @@
 // say the same. Bots 7 and 8 (below slot 4, src/game/view.cpp) are past the menu: their entry is built at the spawn
 // (BotsEntry) from the first two entries, the character and the fields their settings give. An entry the menu never
 // set up (the bots past its Playing ones, net_bots) has no statistics: its character's are played.
+//   With net_bots set the menu's Playing ones are the session's first six bots (PlayingFromSession, each frame), so
+// the match's Start page lists the bots the match will have; Bots 7 and 8 get their pictures after them there.
 #include <algorithm>
 #include <cstdint>
 #include <cstring>
@@ -123,6 +125,23 @@ void BotsMenuEdited() {
     std::memcpy(g_seen, now, kMenuSlots);
 }
 
+// the match's bots as the host's net_bots has them (-1 the menu's own): as many as the places the players left
+int SessionBots() {
+    int n = net::Bots();
+    return n < 0 ? -1 : std::min(n, std::max(net::kMaxPlayers - net::Players(), 0));
+}
+
+// the bot menu's Playing ones are the first of the session's bots, so the pages that list the menu's (the match's
+// Start page, 0x891E0 after 0x75DD0 counted them) show the bots the match will have
+void PlayingFromSession() {
+    int n = SessionBots();
+    if (n < 0) return;
+    static int logged = -1;
+    for (uint32_t i = 0; i < kMenuSlots; i++) B(kMenuBots + i * kEntrySize + 0x0E) = i < uint32_t(n);
+    if (n != logged) LOGI("nightfire: the bot menu has the session's %d bots playing", std::min(n, int(kMenuSlots)));
+    logged = n;
+}
+
 }  // namespace
 
 void BotsFrame(X86Context& ctx) {
@@ -133,6 +152,35 @@ void BotsFrame(X86Context& ctx) {
         ToMenu(ctx, "the host's bot settings");
     }
     BotsMenuEdited();
+    PlayingFromSession();
+}
+
+// The Start page (0x891E0, its 0x4C): after the players its two picture lists (0x10000233, team 1 or everyone, and
+// 0x10000234, team 0; ten rows each, the next row in 0x25E959 / 0x25E958) get a picture of each of the bot menu's
+// Playing ones (column 0x24: the character's 0x17CB98 record, column 0x2B 2: shown). Bots 7 and 8 get theirs after
+// them, with the team and character their spawn gives them (SpawnLowBots, BotsEntry)
+X86_EXTERN_FUNC(__imp__sub_000891E0);
+X86_FUNC(sub_000891E0) {
+    uint32_t page = R32(ctx.esp + 4), message = R32(ctx.esp + 0x10);
+    __imp__sub_000891E0(ctx, base);
+    int extra = net::Active() && message == 0x4C ? SessionBots() - int(kMenuSlots) : 0;
+    if (extra <= 0) return;
+    uint32_t eax = ctx.eax;
+    bool teams = (R32(0x26003C) & 0x20000000) != 0;
+    for (int k = int(kMenuSlots); k < int(kMenuSlots) + extra; k++) {
+        uint32_t entry = kMenuBots + uint32_t(k % int(kMenuSlots)) * kEntrySize;
+        int c = Character(k);
+        uint32_t ch = c >= 0 ? uint32_t(c) : B(entry + 0x10), team = B(entry + 0x0F);
+        if (ch >= kCharacters || (teams && team > 1)) continue;
+        bool left = !teams || team == 1;
+        uint32_t list = left ? 0x10000233 : 0x10000234, next = left ? 0x25E959 : 0x25E958;
+        uint32_t row = B(next);
+        if (row > 9) continue;
+        B(next) = uint8_t(row + 1);
+        kernel::CallGuest(ctx, 0x728F0, {page, list, row, 0x2Bu, 2u, 0u});
+        kernel::CallGuest(ctx, 0x728F0, {page, list, row, 0x24u, R32(0x17CB98 + ch * 0x18), 0u});
+    }
+    ctx.eax = eax;
 }
 
 void BotsMatchStart(X86Context& ctx) {

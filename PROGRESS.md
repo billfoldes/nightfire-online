@@ -25,7 +25,8 @@ Newest first. Each entry: date, what changed, what was learned, what's next.
   re-meeting at each boot), the multiplayer menus and a bot match, then Windows (XAudio2 tick-pacing, LAN)
 - Online matches (2026-11-17): the players who are in plus the bots, up to 10 in all (net_bots: the bot menu's or
   0..8; the bots past the game's six in the slots below 4); the host sets every bot's character or each one's
-  (or Random), shown in and edited from the game's bot menu, and Bots 7 and 8's fields; unlock_multiplayer opens
+  (or Random), shown in and edited from the game's bot menu, and Bots 7 and 8's fields; the match's Start page
+  lists all the bots net_bots chose (2026-11-25); unlock_multiplayer opens
   every character, map and scenario (the host's)
 - Campaign co-op (net, src/game/view.cpp, src/game/characters.cpp): up to 4 players through the campaign on the
   mission's own models plays again (2026-11-10 retest on both PCs); a dead player respawns on a teammate's own spot,
@@ -114,6 +115,20 @@ Newest first. Each entry: date, what changed, what was learned, what's next.
 - Data: `eurocom/filesys.d00`-`d10` and `eurocom/25_fps` (on foot), `driving/*.viv`, `.mus`, `.spe` (driving)
 
 ## Log
+
+### 2026-11-25 - The match's Start page lists the bots F1 chose (v2.0.6)
+- John: the bots picked in F1 (net_bots) joined the match but the Start page's AI Bots row didn't show them. That
+  row is the bot menu's Playing entries: the page (0x891E0, its 0x4C) runs 0x75DD0 first, which moves the Playing
+  ones (+0x0E) to the front and makes their count 0x245281, then draws a picture each (0x728F0 column 0x24, the
+  character's 0x17CB98 record) in the team's list (0x10000233 / 0x10000234, ten rows). Now with net_bots set every
+  machine makes the first of the session's bots (at most six) the menu's Playing ones each frame (bots.cpp,
+  PlayingFromSession), and the page's hook adds Bots 7 and 8's pictures after them with the team and character
+  their spawn gives them. kVersion 35.
+- Headless, two machines from a fresh boot through Multiplayer (net_bots 8): the Start page shows eight bot
+  pictures, the match has 2 players and 8 bots, the memories identical (with REF on the host only its frame
+  buffers differ); net_bots 3 lists three. SMOKE OK.
+- The smoke test's FAIL ("the next xbe did not get the launch data") was a stray .local/harness/NightfireDriving
+  (from scripts/net-bootstrap.sh): the first run relaunched into it and used the launch data up. Removed.
 
 ### 2026-11-21 - Co-op: any character, mid-level (loaded when it is picked)
 - John: changing mid-level worked (v2.0.4), but only to Bond or a character the level loaded with. Now a character

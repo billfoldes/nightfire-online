@@ -83,7 +83,7 @@ int64_t NowMs() {
 }
 
 constexpr uint32_t kMagic = 0x4E464E31;  // "NFN1"
-constexpr uint16_t kVersion = 33;  // 1 (and 2, its Driving.xbe) sent one tick a bundle; 3 (4) no name or handicap;
+constexpr uint16_t kVersion = 35;  // 1 (and 2, its Driving.xbe) sent one tick a bundle; 3 (4) no name or handicap;
                                    // 5 (6) no co-op friendly fire; 7 (8) no rejoining; 9 (10) no host's saves;
                                    // 11 (12) the on-foot sound by the mixer; 13 (14) a driving load's clock counted,
                                    // the car's copied shots paid from player 1's weapon; 15 (16) a seat no one took
@@ -92,7 +92,8 @@ constexpr uint16_t kVersion = 33;  // 1 (and 2, its Driving.xbe) sent one tick a
                                    // (22) no unlock_multiplayer; 23 (24) no net_quit_together nor kRestart;
                                    // 25 (26) no net_bots Fill to the Players count; 27 (28) co-op respawns beside
                                    // the teammate, character changes mid-level; 29 (30) no character change
-                                   // mid-level; 31 (32) no character loaded mid-level
+                                   // mid-level; 31 (32) no character loaded mid-level; 33 (34) the bot menu's
+                                   // Playing ones not the session's bots
 constexpr uint8_t kHello = 1,   // a joiner asking to play, before boot
     kWelcome = 2,               // the host's answer: the controller it is given, the input delay
     kStart = 3,                 // the host: boot, with the session's player count in the sequence
