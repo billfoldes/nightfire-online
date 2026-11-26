@@ -116,6 +116,24 @@ Newest first. Each entry: date, what changed, what was learned, what's next.
 
 ## Log
 
+### 2026-11-25 - Through the relay, straight when it can; UPnP for hosts by IP address (v2.0.7)
+- **Direct connections through the relay** (net_direct, on by default, every player's own): the relay gives a host
+  and a joiner that both allow it each other's address and a secret (master.py's peer packet), they punch through
+  their routers, and once each is told its punches are heard the connection's packets go straight. A punch saying
+  "I do not hear you" or 2 s of silence puts them back on the relay. Old relays and old games ignore the flag (relay
+  alone). Each PC learns the other's address, never shown; John chose on by default, used only when both have it on.
+- **UPnP** (net_upnp, on by default, src/common/upnp.cpp): a host by its IP address asks the router for its UDP port
+  (SSDP, the description's WANIPConnection, AddPortMapping for an hour or for good), again every half hour.
+- The main README points self-hosters at tools/master/README.md. kVersion 37.
+- Evidence: scripts/net-relay.sh OK three ways (both direct: both connect straight; DIRECT=0: no address given out;
+  CUT=40: the joiner's door shut, both back on the relay within half a second of each other, the game frozen about
+  2 s, then on to the end). RELAY=1 scripts/net-rejoin.sh OK (the rejoined machine straight again, memories
+  identical), net-invite OK. scripts/net-upnp.sh OK against a fake router (chunked replies, the wrong service
+  skipped, the hour refused and a permanent lease taken; SSDP found it once, on this LAN, before the search was made
+  opt-in). build-win OK, smoke OK.
+- Next: the relay change goes on the Vultr relay (and the Oracle one); a real test across two homes, where the
+  routers decide.
+
 ### 2026-11-25 - The match's Start page lists the bots F1 chose (v2.0.6)
 - John: the bots picked in F1 (net_bots) joined the match but the Start page's AI Bots row didn't show them. That
   row is the bot menu's Playing entries: the page (0x891E0, its 0x4C) runs 0x75DD0 first, which moves the Playing

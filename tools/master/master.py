@@ -29,7 +29,14 @@ and nobody forwards a port. Its packets: "NFR1", a type, then
     4 joined    relay -> joiner: the u16 connection, the code
     5 refused   relay -> either: 1 no game has the code, 2 that game is full, 3 the relay is full; the code
     6 data      either way: the u16 connection (the joiner's), the game's packet; passed on as it came
+    7 peer      relay -> host and joiner: the u16 connection, the other's IPv4 address and port (network order) as
+                seen here, a u32 secret of the connection's
+    8 punch     host <-> joiner straight, never through here: the u16 connection, the secret, 1 if the sender hears
+                the other's punches (both must, before either sends data straight)
 Integers little endian. Hosts register every 5 s and joiners ask every 5 s; what is not heard of for a minute goes.
+Register and join may end with a flags byte, 1: this machine connects directly when it can (the game's net_direct).
+A joiner's ask that finds both it and its host flagged gets the joiner and the host a peer each: they punch through
+their routers to each other and then send data straight, coming back here if that stops.
 """
 import argparse
 import secrets
@@ -96,7 +103,8 @@ def code_ok(code):
 
 class Relay:
     MAGIC = b"NFR1"
-    REGISTER, CODE, JOIN, JOINED, REFUSED, DATA = range(1, 7)
+    REGISTER, CODE, JOIN, JOINED, REFUSED, DATA, PEER = range(1, 8)
+    DIRECT = 1          # a register's or join's flags
     NO_GAME, FULL, BUSY = 1, 2, 3
     EXPIRE_S = 60
     PER_ADDRESS = 8     # hosts one address may register
@@ -159,7 +167,12 @@ class Relay:
             code = had
             self.host_at[ep] = code
         self.hosts[code]["seen"] = now
+        self.hosts[code]["direct"] = len(data) > 9 + CODE_LEN and bool(data[9 + CODE_LEN] & self.DIRECT)
         self.send(ep, self.CODE, code.encode())
+
+    def peer(self, to, conn, ep, secret):
+        self.send(to, self.PEER, struct.pack("<H", conn) + socket.inet_aton(ep[0]) + struct.pack("!H", ep[1]) +
+                  struct.pack("<I", secret))
 
     def join(self, ep, data, now):
         if len(data) < 5 + CODE_LEN + 2:
@@ -187,11 +200,15 @@ class Relay:
                 while conn is None or conn in self.conns:
                     self.next_conn = self.next_conn % 65535 + 1
                     conn = self.next_conn
-            self.conns[conn] = {"ep": ep, "code": code}
+            self.conns[conn] = {"ep": ep, "code": code, "secret": secrets.randbits(32)}
             self.conn_at[ep] = conn
             h["conns"].add(conn)
-        self.conns[conn]["seen"] = now
+        j = self.conns[conn]
+        j["seen"] = now
         self.send(ep, self.JOINED, struct.pack("<H", conn) + raw)
+        if h.get("direct") and len(data) > 5 + CODE_LEN + 2 and data[5 + CODE_LEN + 2] & self.DIRECT:
+            self.peer(ep, conn, h["ep"], j["secret"])
+            self.peer(h["ep"], conn, ep, j["secret"])
 
     def data(self, ep, data, now):
         if len(data) < 7 or len(data) > 7 + self.LARGEST:

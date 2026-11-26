@@ -18,7 +18,7 @@ Listing does show the host's IP address to everyone who looks, and the host's ga
 **How players reach me** is **A join code through a relay** (`net_host_by` 1; the old `net_host_relay` reads as it) gets a join code such as `NF-K7Q3MZ` on its connection screen and in its log. Joiners type the
 code as the host's address (`join_ip`). Each machine then talks only to the relay, which passes each packet on, so:
 
-- no player sees another player's IP address, only the relay's,
+- no player sees another player's IP address, only the relay's (unless both connect directly, below),
 - the host forwards no port (its own traffic to the relay opens the way back through its router),
 - a game on the server list shows its code and relay, never its address. Pressing it in F1 > Server Browser joins with
   the host's relay (`join_ip` becomes `NF-K7Q3MZ@<relay>`), whatever the player's own Relay server says.
@@ -28,7 +28,11 @@ one the next time the game is started. The relay forgets a game a minute after i
 host's own network can still join it by its address.
 
 Each packet goes to the relay and back out, so the relay's distance adds to the game's delay: pick a server near the
-players. Each player's input is at most about 16 KB/s, and the host sends each joiner everyone else's, so a game of 4
+players. So a host and a joiner that both have **Connect directly when possible** on (`net_direct`, the default) are
+told each other's address by the relay and punch through their routers to each other; once that works both ways their
+packets go straight and the relay only hears from them every 5 s, until the direct path stops. Most home routers let
+it through; a pair it does not work for stays on the relay. Either one turning it off keeps their addresses from each
+other, as before. Each player's input is at most about 16 KB/s, and the host sends each joiner everyone else's, so a game of 4
 passes up to about 200 KB/s each way through the relay. A rejoin's 27 MB state passes through it in a few seconds. A
 Cloudflare Worker cannot relay UDP, so run the relay on a VPS. The list can still be on Cloudflare: it shows relayed
 games by their code. One address can host 8 relayed games and a game takes 16 joiners. Packets beyond 5000 a second from

@@ -2,8 +2,9 @@
 # The relay's test (net_relay, net_host_by 1; tools/master/master.py --relay): a list server with its relay on this
 # PC, a host through the relay that lists its game, a browser that must find it by its join code (no address), and a
 # joiner 20 s in that joins by the code the host's log shows. The session must run through the relay: the host's
-# joiner is a relay connection, and the two play the same game (no "games differ").
-#   scripts/net-relay.sh [seconds, default 80]
+# joiner is a relay connection, and the two play the same game (no "games differ"). Both have net_direct on, so after
+# the relay puts them in touch they must connect straight; DIRECT=0 turns the joiner's off, and then neither may.
+#   [DIRECT=0] scripts/net-relay.sh [seconds, default 80]
 set -uo pipefail
 HERE=$(cd "$(dirname "$0")" && pwd)
 cd "$HERE/.."
@@ -43,7 +44,8 @@ curl -s "$MASTER/list" > "$RUN/list.txt"
 code=$(grep -ho 'join code NF-[A-Z0-9]*' "$RUN"/1/logs/*.log | head -1 | sed 's/join code //')
 echo "the host's join code: ${code:-none}"
 sleep 10
-launch 2 26586 NF_NET="join,$code" NF_NET_WAIT=45
+DIRECT=${DIRECT:-1}
+launch 2 26586 NF_NET="join,$code" NF_NET_WAIT=45 NF_NET_DIRECT="$DIRECT" NF_NET_DIRECT_CUT="${CUT:-}"
 sleep $((SECS - 20))
 kill $(jobs -p) 2>/dev/null
 wait 2>/dev/null
@@ -60,8 +62,24 @@ echo "$found" | grep -q "Machine1 at $code@127.0.0.1:$RELAY_PORT, waiting for pl
 grep -q 'the relay at .* has the game' "$RUN"/2/logs/*.log || fail="${fail:-the joiner did not reach the game through the relay}"
 grep -q 'booting with 2 connected' "$RUN"/1/logs/*.log || fail="${fail:-the session did not start}"
 grep -qi 'games differ' "$RUN"/1/logs/*.log "$RUN"/2/logs/*.log && fail="${fail:-the games differ}"
+grep -h 'straight\|direct connection\|in touch' "$RUN"/1/logs/*.log "$RUN"/2/logs/*.log | sed 's/^.*\] //'
+if [ -n "${CUT:-}" ]; then
+  grep -q 'connected straight to the host' "$RUN"/2/logs/*.log || fail="${fail:-the joiner did not connect straight}"
+  grep -q 'direct connection to the host stopped' "$RUN"/2/logs/*.log || fail="${fail:-the joiner did not go back to the relay}"
+  grep -q 'direct connection to the joiner on relay connection 1 stopped' "$RUN"/1/logs/*.log || fail="${fail:-the host did not go back to the relay}"
+  how="straight, then the relay again once the joiner's door shut at ${CUT} s"
+elif [ "$DIRECT" = 1 ]; then
+  grep -q 'connected straight to the joiner' "$RUN"/1/logs/*.log || fail="${fail:-the host did not connect straight}"
+  grep -q 'connected straight to the host' "$RUN"/2/logs/*.log || fail="${fail:-the joiner did not connect straight}"
+  grep -q 'stopped working both ways' "$RUN"/1/logs/*.log "$RUN"/2/logs/*.log &&
+    fail="${fail:-the direct connection dropped}"
+  how="then straight"
+else
+  grep -q 'in touch' "$RUN"/1/logs/*.log "$RUN"/2/logs/*.log && fail="${fail:-the relay gave out an address the joiner did not allow}"
+  how="the relay alone (the joiner's Connect directly off)"
+fi
 if [ -z "$fail" ]; then
-  echo "NET-RELAY OK: the host got $code, the list showed it with no address, the joiner played through the relay"
+  echo "NET-RELAY OK: the host got $code, the list showed it with no address, the joiner played through the relay, $how"
   exit 0
 fi
 echo "NET-RELAY FAIL: $fail (the runs' logs: $RUN/{1,2,3}/logs, the list: $RUN/list.txt)"

@@ -43,6 +43,9 @@ constexpr uint32_t kHostByAddress = 0, kHostByRelay = 1, kHostByChoices = 2;
 extern uint32_t host_by;
 const char* HostByChoiceName(uint32_t choice);
 bool RelayUsed();                             // the relay settings matter: not while hosting by the IP address
+extern bool direct;                           // net_direct: through a relay, the host and a joiner that both have it
+                                              // on send their packets straight to each other once their routers let them
+extern bool upnp;                             // net_upnp: a host by its IP address asks the router to forward its port
 extern std::string password;                  // net_password: Only people I tell's key when not through the relay
 void NameChanged();                           // net_name changed: the session's players get it within kNameLen ticks
 const char* PlayerName(int player);           // that player's net_name in the session now, "" for none

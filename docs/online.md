@@ -80,6 +80,23 @@ that asks for 20 codes of no game in a minute, so a withheld code is not guessed
 `NF-code@relay` to the clipboard (C, or its button). `scripts/net-password.sh` tests a password; `scripts/net-invite.sh`
 a withheld code: listed without it, heard locked, a wrong code refused, the code through the relay and by address.
 
+**Through the relay, straight when it can** (`net_direct`, NF_NET_DIRECT, on by default; net.cpp's kRelayPeer and
+kRelayPunch). A host and a joiner that both flag it in their register and join packets each get the other's address
+as the relay sees it, with a secret of the connection's, and punch through their routers to each other. Once each
+hears the other's punches and is told its own are heard, the connection's packets go straight (wrapped as for the
+relay, the session still knows the peer by its stand-in address); a punch saying "I do not hear you", or 2 s of none,
+puts them back on the relay, which hears from both every 5 s throughout. A pair whose routers keep it out stays on the
+relay and tries again a minute on. Each PC then knows the other's IP address (never shown); either one's turning it off
+keeps their packets on the relay, and no address is given out. `scripts/net-relay.sh` checks both ends connect
+straight (DIRECT=0: neither may; CUT=40: NF_NET_DIRECT_CUT shuts the joiner's door 40 s in, and both go back to the
+relay with the game frozen about 2 s).
+
+**UPnP** (`net_upnp`, NF_NET_UPNP, on by default; src/common/upnp.cpp). A host by its IP address asks the router to
+forward its UDP port: an SSDP search for an Internet Gateway Device, its description's WANIPConnection (or
+WANPPPConnection) control URL, AddPortMapping for an hour (a permanent one if the router takes no other), again every
+half hour. The log says whether it worked; master.py's reachable check confirms it from outside. `scripts/net-upnp.sh`
+runs it against a fake router (SEARCH=1 finds it by SSDP, on your own network only).
+
 ## What is where
 
 | Piece | Where |

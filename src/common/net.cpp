@@ -48,6 +48,7 @@
 #include "common/http.h"
 #include "common/net.h"
 #include "common/nightfire.h"
+#include "common/upnp.h"
 #include "core/input.h"
 #include "core/log.h"
 #include "kernel/kernel.h"
@@ -70,6 +71,8 @@ uint32_t who = kWhoNotListed;
 std::string relay_server;
 uint32_t host_by = kHostByAddress;
 std::string password;
+bool direct = true;
+bool upnp = true;
 }
 
 namespace nf::net {
@@ -83,7 +86,7 @@ int64_t NowMs() {
 }
 
 constexpr uint32_t kMagic = 0x4E464E31;  // "NFN1"
-constexpr uint16_t kVersion = 35;  // 1 (and 2, its Driving.xbe) sent one tick a bundle; 3 (4) no name or handicap;
+constexpr uint16_t kVersion = 37;  // 1 (and 2, its Driving.xbe) sent one tick a bundle; 3 (4) no name or handicap;
                                    // 5 (6) no co-op friendly fire; 7 (8) no rejoining; 9 (10) no host's saves;
                                    // 11 (12) the on-foot sound by the mixer; 13 (14) a driving load's clock counted,
                                    // the car's copied shots paid from player 1's weapon; 15 (16) a seat no one took
@@ -93,7 +96,8 @@ constexpr uint16_t kVersion = 35;  // 1 (and 2, its Driving.xbe) sent one tick a
                                    // 25 (26) no net_bots Fill to the Players count; 27 (28) co-op respawns beside
                                    // the teammate, character changes mid-level; 29 (30) no character change
                                    // mid-level; 31 (32) no character loaded mid-level; 33 (34) the bot menu's
-                                   // Playing ones not the session's bots
+                                   // Playing ones not the session's bots; 35 (36) no direct connections through
+                                   // the relay, no UPnP
 constexpr uint8_t kHello = 1,   // a joiner asking to play, before boot
     kWelcome = 2,               // the host's answer: the controller it is given, the input delay
     kStart = 3,                 // the host: boot, with the session's player count in the sequence
@@ -775,10 +779,23 @@ void AwaitRelays(const std::string& relay_text) {
 // each on to the other end as it came. To the session a relayed machine has a stand-in address in 240.0.0.0/8, which
 // no real machine has: on a joiner its host is 240.0.0.0 port 1, on the host joiner connection c is 240.0.c port c.
 // Register: a token (the host's proof, kept across its relaunches) and the code it had. Join: the code and the
-// connection it had. Code: the code. Joined: the connection and the code. Refused: why and the code
+// connection it had. Code: the code. Joined: the connection and the code. Refused: why and the code. Register and
+// join end with a flags byte (kRelayFlagDirect: net_direct), which older relays ignore
+//
+// Straight when it can (net_direct): to a host and a joiner that both flag it the relay gives each the other's
+// address as it sees it (kRelayPeer: the joiner's connection, the address, the port, a secret of the connection's),
+// and both send kRelayPunch (the connection, the secret, 1 if it hears the other) straight there every kPunchMs. Each
+// router lets the other side's packets in once its own have gone out. Once a side hears punches (the address they come
+// from is the one used: a router may have changed the port) that say its own are heard, the session's packets of
+// that connection go straight, wrapped as for the relay.
+// Punches go on every kPunchKeepMs to keep the routers' doors open. Nothing heard straight for kDirectLostMs: back
+// through the relay, which still hears from both every few seconds. No luck in kPunchTryMs: again kPunchAgainMs on
 constexpr char kRelayMagic[4] = {'N', 'F', 'R', '1'};
 constexpr uint8_t kRelayRegister = 1, kRelayCode = 2, kRelayJoin = 3, kRelayJoined = 4, kRelayRefused = 5,
-                  kRelayData = 6;
+                  kRelayData = 6, kRelayPeer = 7, kRelayPunch = 8;
+constexpr uint8_t kRelayFlagDirect = 1;
+constexpr int64_t kPunchMs = 200, kPunchKeepMs = 500, kDirectLostMs = 2000, kPunchTryMs = 10000,
+                  kPunchAgainMs = 60000, kPeerForgetMs = 60000;
 constexpr uint8_t kRefusedNoGame = 1, kRefusedFull = 2, kRefusedBusy = 3;
 constexpr size_t kCodeLen = 6, kRelayHeader = 4 + 1 + 2, kRelayMax = 1500;
 constexpr uint16_t kRelayPort = 26581;
@@ -803,6 +820,27 @@ struct Relay {
     int64_t asked = 0;
     uint8_t refused = 0;
 } g_relay;
+
+struct Direct {
+    sockaddr_in to{};
+    uint32_t secret = 0;
+    int64_t told = 0;     // the relay's last kRelayPeer of it
+    int64_t first = 0;    // this try's first punch
+    int64_t punched = 0;  // the last punch sent
+    int64_t heard = 0;    // the last packet straight from it
+    int64_t acked = 0;    // the last punch of its that said it hears this PC
+    bool up = false, gave_up = false;  // as the log last said
+};
+std::mutex g_direct_m;
+std::map<uint16_t, Direct> g_direct;  // by relay connection: a joiner's own, a host's each joiner's
+
+bool Hearing(const Direct& d, int64_t now) { return d.heard && now - d.heard < kDirectLostMs; }
+// both ways: a router that lets one side's packets through and not the other's leaves the pair on the relay
+bool DirectUp(const Direct& d, int64_t now) { return Hearing(d, now) && d.acked && now - d.acked < kDirectLostMs; }
+
+std::string DirectName(uint16_t conn) {
+    return join ? std::string("the host") : "the joiner on relay connection " + std::to_string(conn);
+}
 
 bool Relayed(const sockaddr_in& a) { return (::ntohl(a.sin_addr.s_addr) >> 24) == 240; }
 sockaddr_in RelayStandIn(uint16_t conn) {
@@ -840,6 +878,7 @@ void Send(const sockaddr_in& to, const uint8_t* b, size_t n) {
     const uint8_t* out = b;
     size_t out_n = n;
     uint8_t wrapped[kRelayHeader + kRelayMax];
+    sockaddr_in straight{};
     if (Relayed(to)) {
         uint16_t conn = join ? g_relay.conn.load() : uint16_t(::ntohs(to.sin_port));
         if (!g_relay.on.load() || !conn || n > kRelayMax) return;
@@ -848,6 +887,11 @@ void Send(const sockaddr_in& to, const uint8_t* b, size_t n) {
         std::memcpy(wrapped + 5, &conn, 2);
         std::memcpy(wrapped + kRelayHeader, b, n);
         dest = &g_relay.server, out = wrapped, out_n = kRelayHeader + n;
+        if (direct) {
+            std::lock_guard l(g_direct_m);
+            if (auto it = g_direct.find(conn); it != g_direct.end() && DirectUp(it->second, NowMs()))
+                straight = it->second.to, dest = &straight;
+        }
     }
     if (int r = ::sendto(g.sock, reinterpret_cast<const char*>(out), int(out_n), 0,
                          reinterpret_cast<const sockaddr*>(dest), sizeof(*dest));
@@ -1055,9 +1099,49 @@ bool UseRelay(size_t from, int64_t now) {
     return false;
 }
 
+// the receive thread's: punches to every peer the relay named, while they lead somewhere or are worth a try
+void DirectKeep(int64_t now) {
+    std::lock_guard l(g_direct_m);
+    for (auto it = g_direct.begin(); it != g_direct.end();) {
+        Direct& d = it->second;
+        uint16_t conn = it->first;
+        if (now - d.told > kPeerForgetMs) {  // the relay names a peer every few seconds while it is there
+            it = g_direct.erase(it);
+            continue;
+        }
+        ++it;
+        bool live = DirectUp(d, now);
+        if (d.up && !live) {
+            d.up = false, d.first = now;
+            LOGR("net: the direct connection to %s stopped working both ways: its packets go through the relay again",
+                 DirectName(conn).c_str());
+        }
+        if (!live && now - d.first >= kPunchTryMs) {
+            if (!d.gave_up) {
+                d.gave_up = true;
+                LOGR("net: no direct connection to %s (a router between them keeps it out): its packets stay on the "
+                     "relay, and it is tried again in a minute", DirectName(conn).c_str());
+            }
+            if (now - d.first < kPunchAgainMs) continue;
+            d.first = now;
+        }
+        if (now - d.punched < (live ? kPunchKeepMs : kPunchMs)) continue;
+        d.punched = now;
+        uint8_t p[5 + 2 + 4 + 1];
+        std::memcpy(p, kRelayMagic, 4);
+        p[4] = kRelayPunch;
+        std::memcpy(p + 5, &conn, 2);
+        std::memcpy(p + 7, &d.secret, 4);
+        p[11] = Hearing(d, now) ? 1 : 0;
+        ::sendto(g.sock, reinterpret_cast<const char*>(p), int(sizeof p), 0, reinterpret_cast<const sockaddr*>(&d.to),
+                 sizeof(d.to));
+    }
+}
+
 void RelayKeep() {
     if (!g_relay.on.load()) return;
     int64_t now = NowMs();
+    if (direct) DirectKeep(now);
     std::lock_guard l(g_relay.m);
     bool through = host ? g_relay.have_code.load() : g_relay.conn.load() != 0;
     if (!through && g_relay.candidates.size() > 1 && now - g_relay.asked >= kRelayAskMs &&
@@ -1077,7 +1161,7 @@ void RelayKeep() {
     bool answered = through || g_relay.refused;
     if (now - g_relay.asked < (answered ? kRelayEveryMs : kRelayAskMs)) return;
     g_relay.asked = now;
-    uint8_t p[5 + 4 + kCodeLen] = {};
+    uint8_t p[5 + 4 + kCodeLen + 1] = {};
     std::memcpy(p, kRelayMagic, 4);
     size_t n;
     if (host) {
@@ -1092,6 +1176,7 @@ void RelayKeep() {
         std::memcpy(p + 5 + kCodeLen, &conn, 2);
         n = 5 + kCodeLen + 2;
     }
+    p[n++] = direct ? kRelayFlagDirect : 0;
     ::sendto(g.sock, reinterpret_cast<const char*>(p), int(n), 0, reinterpret_cast<const sockaddr*>(&g_relay.server),
              sizeof(g_relay.server));
 }
@@ -1137,8 +1222,69 @@ bool FromRelay(uint8_t* buf, int& n, sockaddr_in& from) {
                                           : "the relay is full");
         g_relay.refused = buf[5];
         if (join && buf[5] == kRefusedNoGame) g_relay.conn = 0;
+    } else if (type == kRelayPeer && direct && n >= 5 + 2 + 4 + 2 + 4) {
+        uint16_t conn;
+        std::memcpy(&conn, buf + 5, 2);
+        if (!conn || (join && conn != g_relay.conn.load())) return false;
+        sockaddr_in to{};
+        to.sin_family = AF_INET;
+        std::memcpy(&to.sin_addr.s_addr, buf + 7, 4);
+        std::memcpy(&to.sin_port, buf + 11, 2);
+        uint32_t secret;
+        std::memcpy(&secret, buf + 13, 4);
+        int64_t now = NowMs();
+        std::lock_guard d(g_direct_m);
+        if (!g_direct.count(conn) && g_direct.size() >= 64) return false;
+        Direct& e = g_direct[conn];
+        bool fresh = e.secret != secret;
+        if (fresh) {
+            e = Direct{};
+            e.secret = secret;
+            LOGR("net: the relay put %s in touch with this PC: trying a direct connection", DirectName(conn).c_str());
+        }
+        if (fresh || (!DirectUp(e, now) && !SameEndpoint(e.to, to))) e.to = to, e.first = now, e.gave_up = false;
+        e.told = now;
     }
     return false;
+}
+
+// a relay-wrapped packet that did not come from the relay: a peer's punch (false), or a session's packet straight
+// from the peer its punches came from, unwrapped in place with its stand-in address as from the relay (true)
+bool FromDirect(uint8_t* buf, int& n, sockaddr_in& from) {
+    if (!direct || n < int(kRelayHeader)) return false;
+    static const int64_t cut = [] {  // NF_NET_DIRECT_CUT=s: the harness's router shuts its door s seconds in
+        const char* e = std::getenv("NF_NET_DIRECT_CUT");
+        return e && *e ? NowMs() + int64_t(std::atoi(e)) * 1000 : int64_t(0);
+    }();
+    if (cut && NowMs() >= cut) return false;
+    uint16_t conn;
+    std::memcpy(&conn, buf + 5, 2);
+    if (!conn || (join && conn != g_relay.conn.load())) return false;
+    int64_t now = NowMs();
+    std::lock_guard l(g_direct_m);
+    auto it = g_direct.find(conn);
+    if (it == g_direct.end()) return false;
+    Direct& d = it->second;
+    if (buf[4] == kRelayPunch) {
+        uint32_t secret;
+        if (n < int(kRelayHeader + 4 + 1)) return false;
+        std::memcpy(&secret, buf + 7, 4);
+        if (secret != d.secret) return false;
+        d.to = from, d.heard = now;
+        d.acked = buf[11] & 1 ? now : 0;  // it does not hear this PC: no waiting for kDirectLostMs to say so
+        if (!d.up && DirectUp(d, now)) {
+            d.up = true, d.gave_up = false;
+            LOGR("net: connected straight to %s: the match's packets skip the relay (it stays there if this stops)",
+                 DirectName(conn).c_str());
+        }
+        return false;
+    }
+    if (buf[4] != kRelayData || !d.heard || !SameEndpoint(from, d.to)) return false;
+    d.heard = now;
+    n -= int(kRelayHeader);
+    std::memmove(buf, buf + kRelayHeader, size_t(n));
+    from = RelayStandIn(join ? 0 : conn);
+    return true;
 }
 
 // a session's packets come from its own machines alone: a joiner hears its host, the host each joiner at the address
@@ -1780,7 +1926,8 @@ void Receive() {
         int n = ::recvfrom(g.sock, reinterpret_cast<char*>(buf), sizeof buf, 0,
                            reinterpret_cast<sockaddr*>(&from), &len);
         if (n >= 5 && std::memcmp(buf, kRelayMagic, 4) == 0) {
-            if (!g_relay.on.load() || !SameEndpoint(from, g_relay.server) || !FromRelay(buf, n, from)) continue;
+            if (!g_relay.on.load()) continue;
+            if (SameEndpoint(from, g_relay.server) ? !FromRelay(buf, n, from) : !FromDirect(buf, n, from)) continue;
         }
         if (n <= 0) {
             int err = n ? ::WSAGetLastError() : 0;
@@ -2722,6 +2869,8 @@ void Init(void* hwnd) {
     std::string relay_text = relay_server;
     if (const char* e = std::getenv("NF_NET_RELAY")) relay_text = e;
     if (const char* e = std::getenv("NF_NET_HOST_RELAY"); e && *e) host_by = *e == '1' ? kHostByRelay : kHostByAddress;
+    if (const char* e = std::getenv("NF_NET_DIRECT"); e && *e) direct = *e == '1';
+    if (const char* e = std::getenv("NF_NET_UPNP"); e && *e) upnp = *e == '1';
     std::string code_relay;  // a join code's own (NF-CODE@relay): that relay alone
     std::string code = join ? JoinCode(address, code_relay) : std::string();
     if (size_t colon = address.rfind(':');
@@ -2759,6 +2908,8 @@ void Init(void* hwnd) {
             return;
         }
         LOGR("net: hosting on %s:%u, waiting up to %u s for %d players", IpString(lan_ip).c_str(), port, wait, g_target);
+        static bool opened = false;  // the router is asked once a run, and again by its own thread
+        if (host_by != kHostByRelay && upnp && !opened) opened = true, upnp::Open(uint16_t(port));
         if (host_by == kHostByRelay) {
             AwaitRelays(relay_text);
             std::lock_guard l(g_relay.m);
