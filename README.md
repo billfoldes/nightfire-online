@@ -85,6 +85,21 @@ start plays alone.
 **About you** (F1, Online): **My name**, **My character** and **My health handicap** reach the others at once or at the
 next match; **Streamer mode** hides typed names and IP addresses on your screen.
 
+**Through a relay, straight when it can:** a game by join code starts through the relay, then each joiner and the host
+try to reach each other directly (**Connect directly when possible**, under Servers, on by default). When both have it
+on and their routers let it through, the match's packets go straight between them, with no relay distance added, and
+the relay only carries the games that need it. Each PC then knows the other's IP address (it is still never shown).
+Either one turning it off keeps their packets on the relay.
+
+**Hosting by IP address:** the game asks your router to forward its UDP port (**Open my port on the router (UPnP)**,
+under Advanced, on by default). Routers with UPnP switched off need the port forwarded by hand.
+
+### Self-hosting a list or relay
+
+The Server Browser's list and the relay are one small Python program, `tools/master/master.py` (a Cloudflare Worker
+can serve the list too). Anyone can run them on a VPS or an always-on PC, and every copy of the game learns of new
+ones from the lists it already knows: see [tools/master/README.md](tools/master/README.md).
+
 ## Building from Source (developers)
 
 **You need:** Windows 10 or 11 (64 bit), [Git](https://git-scm.com/download/win), Visual Studio 2022 (Community is
