@@ -116,6 +116,14 @@ Newest first. Each entry: date, what changed, what was learned, what's next.
 
 ## Log
 
+### 2026-11-27 - F1's Keyboard section changes the keys
+- John: a new player sees only the controller's inputs to map keys to and can't tell what a key does. F1 Controls'
+  Keyboard section (each action in play and its keys) now has the two key buttons of the Inputs table on each row,
+  so a key is changed by what it does; the table below is Controller (each console input, its keys, its button).
+  The SDK's KeyButton is the one both use. Windows build only (no display here to open F1).
+- unlock_rewards (v2.0.8) is the cheat codes' unlocks: the 64 reward bits PASSPORT, Q LAB and the other codenames
+  cheats set read as all set. Not changed.
+
 ### 2026-11-26 - John's co-op list (v2.0.8)
 - **Extra co-op enemies no longer stand in walls or seal a hall** (src/game/enemies.cpp): a copy stood 0.8 to a fixed
   side of its original, whatever was there. Now each copy tries eight places around the original and takes one whose
