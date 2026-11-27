@@ -68,6 +68,68 @@ float FovScale() {
     return float(pct) / 100;
 }
 
+uint32_t frame_rate = 0;
+
+namespace {
+constexpr uint32_t kMonitor = 1, kRates[kFrameRates] = {60, 0, 120, 144, 165, 240};
+const char* const kRateNames[kFrameRates] = {"60 (the Xbox's)", "The monitor's refresh", "120", "144", "165", "240"};
+
+// the refresh of the monitor the window is on, 0 unknown
+uint32_t MonitorHz() {
+#ifdef _WIN32
+    static uint32_t hz = 0;
+    static auto asked = std::chrono::steady_clock::time_point{};
+    auto now = std::chrono::steady_clock::now();
+    if (now - asked < std::chrono::seconds(2)) return hz;
+    asked = now;
+    HWND w = static_cast<HWND>(app::Window());
+    MONITORINFOEXW mi{};
+    mi.cbSize = sizeof mi;
+    DEVMODEW dm{};
+    dm.dmSize = sizeof dm;
+    hz = w && GetMonitorInfoW(MonitorFromWindow(w, MONITOR_DEFAULTTONEAREST), &mi) &&
+                 EnumDisplaySettingsW(mi.szDevice, ENUM_CURRENT_SETTINGS, &dm) && dm.dmDisplayFrequency > 1
+             ? uint32_t(dm.dmDisplayFrequency)
+             : 0;
+    return hz;
+#else
+    return 0;
+#endif
+}
+}  // namespace
+
+const char* FrameRateName(uint32_t index) { return kRateNames[std::min(index, kFrameRates - 1)]; }
+
+// picked in the settings window: the frame cap is raised to it (a cap below it would hold the game back)
+void FrameRateChanged() {
+    uint32_t want = frame_rate == kMonitor ? MonitorHz() : kRates[std::min(frame_rate, kFrameRates - 1)];
+    app::Settings& s = app::Get();
+    if (want > 60 && s.fps_cap && s.fps_cap < want) {
+        s.fps_cap = want;
+        app::Save();
+    }
+}
+
+uint32_t GameRate() {
+    static const uint32_t forced = [] {  // NF_FRAME_RATE=N headless: N frames a second
+        const char* e = std::getenv("NF_FRAME_RATE");
+        return e && *e ? uint32_t(std::atoi(e)) : 0u;
+    }();
+    uint32_t want = kRates[std::min(frame_rate, kFrameRates - 1)];
+    if (frame_rate == kMonitor) want = MonitorHz();
+    if (forced) want = forced;
+    const app::Settings& s = app::Get();
+    if (s.fps_cap && s.fps_cap < want) want = s.fps_cap;
+    if (uint32_t hz = MonitorHz(); s.vsync && hz && hz < want) want = hz;
+    uint32_t rate = net::Active() ? 60 : std::clamp<uint32_t>(want, 60, 360);
+    static uint32_t said = 60;
+    if (rate != said) {
+        said = rate;
+        LOGR("nightfire: the game at %u frames a second", rate);
+    }
+    return rate;
+}
+
 uint32_t crosshair_color = 0, crosshair_size = 100;
 
 namespace {
@@ -201,6 +263,55 @@ std::array<uint16_t, 2> DrivingKeys(int c) {
     }
 }
 std::array<uint16_t, 2> Keys(int c) { return nf::kDriving ? DrivingKeys(c) : ShooterKeys(c); }
+
+// what the inputs above do, for F1's Keyboard list
+const char* ShooterAction(int c) {
+    using namespace input;
+    switch (c) {
+        case kLSUp: return "Move forward";
+        case kLSDown: return "Move back";
+        case kLSLeft: return "Step left";
+        case kLSRight: return "Step right";
+        case kRT: return "Fire";
+        case kLT: return "Manual aim";
+        case kA: return "Crouch (select in menus)";
+        case kX: return "Action, reload";
+        case kY: return "Jump";
+        case kB: return "Next weapon (back in menus)";
+        case kWhite: return "Alternate fire";
+        case kBlack: return "Next gadget";
+        case kBack: return "Vision mode";
+        case kUp: return "Gadget up, zoom in";
+        case kDown: return "Gadget down, zoom out";
+        case kLeft: return "Weapon before";
+        case kRight: return "Next weapon";
+        case kStart: return "Pause";
+        default: return nullptr;
+    }
+}
+const char* DrivingAction(int c) {
+    using namespace input;
+    switch (c) {
+        case kRT: return "Accelerate";
+        case kLT: return "Brake, reverse";
+        case kLSLeft: return "Steer left";
+        case kLSRight: return "Steer right";
+        case kLSUp: return "Pitch (Deep Descent), menu up";
+        case kLSDown: return "Pitch (Deep Descent), menu down";
+        case kA: return "Fire (select in menus)";
+        case kB: return "Handbrake (back in menus)";
+        case kX: return "Gadget";
+        case kY: return "Camera";
+        case kBlack: return "Next weapon";
+        case kWhite: return "Weapon before";
+        case kRThumb: return "Look back";
+        case kLeft: return "Weapon before";
+        case kRight: return "Next weapon";
+        case kStart: return "Pause";
+        default: return nullptr;
+    }
+}
+const char* Action(int c) { return nf::kDriving ? DrivingAction(c) : ShooterAction(c); }
 
 #ifdef _WIN32  // the settings file (the headless harness has none)
 // One settings file for both exes, each with its own keys: the runtime reads and writes [keys] as this exe's (only
@@ -536,6 +647,17 @@ const char* BotFieldName(uint32_t choice) { return net::BotFieldChoiceName(Field
            "As the game's bot menu has it for its six. Default: the character's own when Bot " #n " has one here, else Bot " #like "'s. Greyed while Every bot's skill is Bot 1's, or for a character whose statistics are fixed.", \
            net::kBotFields[f].count + 1, BotFieldName<f>, BotFieldsFree<n - 1>)
 
+app::Option FrameRateRow() {
+    app::Option o{"frame_rate", nullptr, &nf::frame_rate, "Game frame rate",
+                  "The game itself runs this many frames a second (60 on the Xbox), on foot and driving, at its own speed: "
+                  "smoother, and the controls answer sooner. Picking one raises the frame rate cap to it. Never above the "
+                  "cap, nor with vsync above the monitor's refresh. A PC that cannot keep it up slows the game down, as a "
+                  "busy Xbox did. Online play stays at 60. Driving takes it at the next mission.",
+                  nf::kFrameRates, nf::FrameRateName};
+    o.changed = nf::FrameRateChanged;
+    return o;
+}
+
 // what the runtime asks of the game; strings must be set, hooks may stay null
 const app::GameInfo app::kGame = {
     .title = L"007: NightFire",          // window and splash
@@ -562,6 +684,7 @@ const app::GameInfo app::kGame = {
                  "A controller's prompts as today's Xbox pad marks them: LB and RB for White and Black, Menu and View for Start and Back."},
                 {"fov_percent", nullptr, &nf::fov_percent, "Field of view (%)",
                  "50 to 150; 100 is the game's. On foot, driving and in the engine's cutscenes; the scope zooms in proportion."},
+                FrameRateRow(),
                 {"crosshair_color", nullptr, &nf::crosshair_color, "Crosshair color",
                  "The on-foot crosshair's color, in every mission, co-op and match; applies at once. Online, each player's own.",
                  nf::kCrosshairColors, nf::CrosshairColorName},
@@ -673,6 +796,7 @@ const app::GameInfo app::kGame = {
     .mouse_direct = true,                 // the view and the mounted guns turn by it directly (src/game/mouse.cpp,
                                           // src/driving/mouse.cpp), not as the right stick
     .default_keys = Keys,                 // a shooter's keys on foot, a driving layout in Driving.xbe
+    .control_action = Action,
     .texture_bound = TextureBound,        // the button pictures as the keys, the fonts with smooth edges
     .relaunching = net::Close,            // closes the session's UDP socket before the handover to the next exe
     .restarting = net::Restarting,        // F1's Restart online play: leaves the session, the new boot meets again

@@ -153,6 +153,9 @@ Newest first. Each entry: date, what changed, what was learned, what's next.
   (player 1's too). The Paris van's scope, player 2 aiming right: their own view looks along their aim, off it
   shows player 1's; both machines identical either way.
 - **F1's number popup stays open on − and +** (SDK overlay.cpp): it closes on Enter alone.
+- **F1 Controls lists what each key does** (SDK GameInfo::control_action, overlay.cpp's Keyboard section above
+  Inputs while the keyboard plays): each input's action in play beside its keys, on foot from the game's controls
+  page (crouch, action/reload, jump ...), in Driving.xbe its Driving Config; the Inputs table still changes them.
 - **Nightshift's guards get their extra copies** (src/game/enemies.cpp): its 20 placed characters are turned into 6
   spawners' records at the level's start (0x30670, deleted with 0x2D080) and come back from the spawners (0x323E0)
   as the script's flags (0x1DF138 + 131..136) wake them, on team 3, not 1; the copies took team 1 alone. 0x364F0
