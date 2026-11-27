@@ -201,6 +201,12 @@ struct State {
     // one, each pixel covering aa_x by aa_y of its samples (EoN's particles: 4X on its 640x480 buffer, drawn 320x240
     // and stretched). Positions, the viewport and scissors are in those larger pixels.
     uint32_t aa_x = 1, aa_y = 1;
+    // the frame buffers' data (physical) and the samples across and down the present parameters made them with. The
+    // console keeps each sample, so a 2X buffer is 1280x480 in memory and a linear texture over it takes texel
+    // coordinates over that (NightFire's scope copies its 640x480 screen with u 0 to 1280); the renderer makes the
+    // buffer its drawn size instead
+    std::array<uint32_t, 3> frame_data{};
+    uint32_t frame_samples_x = 1, frame_samples_y = 1;
     // ultrawide: a game hook spreads the 2D being drawn wider than the 4:3 frame (a 4:3 HUD laid out at 16:9): each
     // draw moved by squeeze_shift guest pixels (a left panel left, a right one right, set per element) as it is
     // squeezed, its shape kept; no corner is kept on the frame's edges meanwhile (a letter's edge may fall on one)
@@ -238,6 +244,17 @@ inline const State* PointSpriteStages(const State& s, uint32_t prim) {
     t->tss[3][kTssColorOp] = 1;  // D3DTOP_DISABLE
     t->tss[3][kTssAlphaOp] = 1;
     return t.get();
+}
+
+// a linear texture's texel coordinates over data: the console's samples per pixel across and down when it is a frame
+// buffer (State::frame_data), else 1
+inline void FrameTexels(const State& s, uint32_t data, uint32_t& x, uint32_t& y) {
+    x = y = 1;
+    for (uint32_t f : s.frame_data)
+        if (f && ((f ^ data) & 0x0FFFFFFF) == 0) {
+            x = s.frame_samples_x;
+            y = s.frame_samples_y;
+        }
 }
 
 // what a title's code may change about one draw: g_draw_filter, set before the first frame, sees each draw's state

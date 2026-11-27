@@ -277,6 +277,7 @@ struct Unit {
     std::shared_ptr<Image> img;
     uint32_t address_u = 1, address_v = 1, mag = 2, min = 2;
     Vec border;
+    uint32_t texels_x = 1, texels_y = 1;  // rect coordinates per image texel (gpu::FrameTexels)
 
     // D3DTADDRESS: 1 wrap, 2 mirror, 4 border, else clamp
     static int Address(int i, int n, uint32_t mode, bool& outside) {
@@ -547,8 +548,8 @@ struct Combiners {
     // a texture stage with rect coordinates takes texels
     void Norm(int i, float& u, float& v) const {
         if (m.info[i].rect && m.unit[i].img) {
-            u /= m.unit[i].img->w;
-            v /= m.unit[i].img->h;
+            u /= float(m.unit[i].img->w * m.unit[i].texels_x);
+            v /= float(m.unit[i].img->h * m.unit[i].texels_y);
         }
     }
     // the depth texel against ref by D3DRS_SHADOWFUNC, point sampled
@@ -835,8 +836,8 @@ bool ShadeStages(const Material& m, const Fragment& f, Vec& out) {
         } else if (m.info[i].kind) {
             float u = f.tc[i][0], v = f.tc[i][1];
             if (m.info[i].rect && u0.img) {
-                u /= u0.img->w;
-                v /= u0.img->h;
+                u /= float(u0.img->w * u0.texels_x);
+                v /= float(u0.img->h * u0.texels_y);
             }
             tex = u0.Sample(0, u, v);
         } else {
@@ -1203,6 +1204,7 @@ void Draw(const State& s, uint32_t prim, uint32_t start, uint32_t count, const u
         u.mag = ti.shadow ? 1 : ts[kTssMagFilter];
         u.min = ti.shadow ? 1 : ts[kTssMinFilter];
         u.border = Unpack(ts[kTssBorderColor]);
+        if (d.linear) FrameTexels(s, d.data, u.texels_x, u.texels_y);
     }
     mat.key = MakePixelKey(s, mat.info);
     for (int i = 0; i < 8; i++) {

@@ -582,7 +582,15 @@ void FillTexelConstants(int i, const TextureDesc& d, const StageReads& stages, D
 void FillTextureConstants(const State& s, const StageReads& stages, DrawConstants& c) {
     for (int i = 0; i < 4; i++) {
         TextureDesc d;
-        if (s.textures[size_t(i)] && Describe(s.textures[size_t(i)], d)) FillTexelConstants(i, d, stages, c);
+        if (s.textures[size_t(i)] && Describe(s.textures[size_t(i)], d)) {
+            FillTexelConstants(i, d, stages, c);
+            uint32_t x, y;
+            if (d.linear) FrameTexels(s, d.data, x, y);
+            if (d.linear && (x != 1 || y != 1)) {
+                c.texsize[i][0] *= float(x);
+                c.texsize[i][1] *= float(y);
+            }
+        }
         const auto& t = s.tss[size_t(i)];
         c.bump[i][0] = Bits(t[kTssBumpEnvMat00]);
         c.bump[i][1] = Bits(t[kTssBumpEnvMat01]);

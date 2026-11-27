@@ -519,6 +519,10 @@ bool MakeFrameBuffers(uint32_t pp) {
     g_state.viewport = {0, 0, w, h, 0.0f, 1.0f};
     g_state.rt = SurfaceOf(g_buffers[1]);
     g_state.zs = SurfaceOf(g_depth);
+    g_state.frame_data = {};
+    for (uint32_t i = 0; i < g_buffer_count; i++) g_state.frame_data[i] = R32(g_buffers[i] + 4) & 0x0FFFFFFF;
+    g_state.frame_samples_x = g_made_samples[0];
+    g_state.frame_samples_y = g_made_samples[1];
     UpdateSampleScale();
     return fresh;
 }
@@ -549,8 +553,8 @@ HLE_STDCALL(Direct3D_CreateDevice, 6) {
     uint32_t auto_depth = R32(pp + 0x20), depth_fmt = R32(pp + 0x24), interval = R32(pp + 0x30);
     if (!w) w = 640;
     if (!h) h = 480;
-    LOGI("d3d: CreateDevice %ux%u format %X buffers %u depth %u format %X interval %X flags %X", w, h, fmt, count,
-         auto_depth, depth_fmt, interval, R32(pp + 0x28));
+    LOGI("d3d: CreateDevice %ux%u format %X buffers %u depth %u format %X interval %X flags %X multisample %X", w, h, fmt,
+         count, auto_depth, depth_fmt, interval, R32(pp + 0x28), R32(pp + 0x10));
     // 3948 keeps the frame buffer objects in the device: kept across the clear, so the same parameters reuse them
     uint8_t frame_surfaces[3 * 24], auto_depth_surface[24];
     bool inline_surfaces = XDK_CDevice_FrameSurfaces != xdk::kUnknown && g_buffers[1];
@@ -2534,6 +2538,11 @@ void LoadState(snapshot::Reader& r) {
     r.Pod(g_report_asked);
     r.Pod(g_own_constants);
     r.Pod(g_made_samples);
+    g_state.frame_data = {};
+    for (uint32_t i = 0; i < g_buffer_count && i < 3; i++)
+        g_state.frame_data[i] = g_buffers[i] ? R32(g_buffers[i] + 4) & 0x0FFFFFFF : 0;
+    g_state.frame_samples_x = g_made_samples[0];
+    g_state.frame_samples_y = g_made_samples[1];
     g_constant_load = r.U32();
     bool suppress = false;
     r.Pod(suppress);
