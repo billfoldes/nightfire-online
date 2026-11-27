@@ -116,6 +116,27 @@ Newest first. Each entry: date, what changed, what was learned, what's next.
 
 ## Log
 
+### 2026-11-27 - Online play shows the screen's frame rate, the game still at 60
+- **Smooth online frames** (F1 `smooth_online`, on by default; nf::SmoothOnline as GameInfo::step_interpolation,
+  the SDK's gpu/interp.cpp): a session keeps every machine's game at 60 steps a second (lockstep), and with the frame
+  rate cap above 60 the renderer now draws the frames between two steps, each step's draws again with their vertex
+  constants blended from the step before. Render side only: the game, its memory and the session are untouched
+  (the blender's buffers are in the host's part of physical memory, outside every snapshot). The picture is up to a
+  step (16.7 ms) behind. Off in single player (its own frame rate goes past 60 there).
+- The blender (SDK) kept a copy of every draw's vertices; an on-foot step needs about 17.8 MB, past its 8 MB a step,
+  so it drew nothing in between. A title that overflows it now keeps only what it rewrites within a step: the
+  DrawVerticesUP ring and a buffer whose first 256 bytes changed between two draws of a step (five on foot). Memory
+  drawn from once still holds those vertices when the step presents. On foot then 47 KB a step; driving fits (about
+  2.5 MB) and keeps everything as before, as does every title whose steps fit.
+- Headless (two machines in co-op, the joiner XBE_INTERP_TEST=3, three frames a step, the host none): on foot at
+  07000005 turning on the spot, 600 of 600 steps blended, consecutive frames apart by 0.0178 to 0.0186 of the picture
+  each (an unblended step would put it all in one frame of three); no "the games differ". Paris's van
+  (net-driving-gun) OK, both machines the same; in the zoomed scope the game's glow points (built on the CPU from the
+  late copy of the screen) still move once a step, as on the console where they come from a frame or two before.
+- Not seen here: the timing (the harness draws the frames evenly, however long they take). John: online with Frame
+  rate cap at the monitor's, does the picture move smoother, and does the log say "gpu: in-between frames, a step of
+  16.7 ms"?
+
 ### 2026-11-27 - The scope's blur is the frame's own, not an older one laid over it
 - **The scope's blurred surround no longer lags the view** (SDK d3d12.cpp and d3d11.cpp CpuWrote; John, v2.0.10 on
   Windows: the blur still looked like a layer over the scene, a building at another angle than the sharp one; the

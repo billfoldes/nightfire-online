@@ -69,6 +69,7 @@ float FovScale() {
 }
 
 uint32_t frame_rate = 0;
+bool smooth_online = true;
 
 namespace {
 constexpr uint32_t kMonitor = 1, kRates[kFrameRates] = {60, 0, 120, 144, 165, 240};
@@ -675,11 +676,15 @@ app::Option FrameRateRow() {
                   "The game itself runs this many frames a second (60 on the Xbox), on foot and driving, at its own speed: "
                   "smoother, and the controls answer sooner. Picking one raises the frame rate cap to it. Never above the "
                   "cap, nor with vsync above the monitor's refresh. A PC that cannot keep it up slows the game down, as a "
-                  "busy Xbox did. Online play stays at 60. Driving takes it at the next mission.",
+                  "busy Xbox did. Online the game stays at 60 (Smooth online frames below fills the screen's rate). "
+                  "Driving takes it at the next mission.",
                   nf::kFrameRates, nf::FrameRateName};
     o.changed = nf::FrameRateChanged;
     return o;
 }
+
+// a session steps at 60 on every machine (lockstep): the renderer draws the frames between, the game none the wiser
+bool SmoothOnline() { return nf::smooth_online && net::Active(); }
 
 // what the runtime asks of the game; strings must be set, hooks may stay null
 const app::GameInfo app::kGame = {
@@ -708,6 +713,8 @@ const app::GameInfo app::kGame = {
                 {"fov_percent", nullptr, &nf::fov_percent, "Field of view (%)",
                  "50 to 150; 100 is the game's. On foot, driving and in the engine's cutscenes; the scope zooms in proportion."},
                 FrameRateRow(),
+                {"smooth_online", &nf::smooth_online, nullptr, "Smooth online frames",
+                 "On by default: online play keeps the game at 60 steps a second on every PC (so they stay together), and with the Frame rate cap above 60 (Game frame rate above 60 raises it) the screen still shows up to that many frames a second, the ones between two steps blended from them. The picture is up to a 60th of a second behind the game; the game itself and the other players are not changed. Off: 60 frames a second online. Applies at once."},
                 {"crosshair_color", nullptr, &nf::crosshair_color, "Crosshair color",
                  "The on-foot crosshair's color, in every mission, co-op and match; applies at once. Online, each player's own.",
                  nf::kCrosshairColors, nf::CrosshairColorName},
@@ -822,6 +829,7 @@ const app::GameInfo app::kGame = {
     .default_keys = Keys,                 // a shooter's keys on foot, a driving layout in Driving.xbe
     .control_action = Action,
     .texture_bound = TextureBound,        // the button pictures as the keys, the fonts with smooth edges
+    .step_interpolation = SmoothOnline,   // smooth_online
     .relaunching = net::Close,            // closes the session's UDP socket before the handover to the next exe
     .restarting = net::Restarting,        // F1's Restart online play: leaves the session, the new boot meets again
     .find_games = net::FindGames,         // F1's Server Browser: the games on this LAN and the internet list's

@@ -24,6 +24,8 @@ float FovScale();             // fov_percent as a factor, 0.5 to 1.5
 // the game's own frame rate (src/game/hooks.cpp, src/driving/refresh.cpp): a choice of kFrameRates, and the rate it
 // plays at now (60 online, never above the frame cap or, with vsync, the monitor's refresh; 60 at least)
 extern uint32_t frame_rate;
+// F1: online, where the game steps at 60, the frames between its steps drawn up to the frame cap (sdk gpu/interp.cpp)
+extern bool smooth_online;
 constexpr uint32_t kFrameRates = 6;
 const char* FrameRateName(uint32_t index);
 uint32_t GameRate();
