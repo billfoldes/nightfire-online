@@ -54,8 +54,11 @@ X86_FUNC(sub_000E46D0) {
 }
 
 X86_EXTERN_FUNC(__imp__sub_00096EB0);
-X86_FUNC(sub_00096EB0) {  // a view's angle and aspect
+X86_FUNC(sub_00096EB0) {  // fastcall (view): a view's angle and aspect, its matrix from its camera (+4)
+    uint32_t cam = kernel::R32(ctx.ecx + 4), saved[12];
+    bool turned = nf::TurnOwnView(cam, saved);
     Scaled([&] { __imp__sub_00096EB0(ctx, base); });
+    if (turned) nf::RestoreView(cam, saved);
 }
 
 X86_EXTERN_FUNC(__imp__sub_000CE2B0);

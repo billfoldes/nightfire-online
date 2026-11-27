@@ -36,6 +36,7 @@ bool skip_intro = true;
 bool skip_tutorial = true;
 bool hide_hud = false;
 bool others_reticles = false;
+bool own_view = true;
 bool unlock_missions = false;
 bool unlock_multiplayer = false;
 bool unlock_rewards = false;
@@ -97,6 +98,7 @@ void Init() {
     if (const char* e = std::getenv("NF_UNLOCK_MISSIONS"); e && *e) nf::unlock_missions = *e == '1';
     if (const char* e = std::getenv("NF_UNLOCK_MULTIPLAYER"); e && *e) nf::unlock_multiplayer = *e == '1';
     if (const char* e = std::getenv("NF_UNLOCK_REWARDS"); e && *e) nf::unlock_rewards = *e == '1';
+    if (const char* e = std::getenv("NF_OWN_VIEW"); e && *e) nf::own_view = *e == '1';
     if (const char* e = std::getenv("NF_MODERN_BUTTONS"); e && *e) nf::modern_buttons = *e == '1';
     // every achievement's condition parses (a typo would leave it never met)
     for (const achievements::Def& d : app::kGame.achievements)
@@ -631,6 +633,8 @@ const app::GameInfo app::kGame = {
                  "On this PC, at once: the other players' typed names are drawn as Player 1, Player 2 and so on; the Server Browser lists each game as Game and a number of its own instead of its host's name (saved servers too); and no IP address shows, in the Server Browser, its boxes, the host's address row or the connection screen (typed ones as dots). A locked game's join code is hidden on its host's connection screen too; C still copies it."},
                 {"net_others_reticles", &nf::others_reticles, nullptr, "Show the other players' reticles",
                  "On this PC, at once: on the driving missions' mounted guns in co-op (Paris's van, Alpine Escape's turret), each other player's reticle is drawn too, smaller and fainter than yours, in their color. Player 1 aims with the game's own crosshair."},
+                {"net_own_view", &nf::own_view, nullptr, "My own view on the mounted guns",
+                 "On by default: on the driving missions' mounted guns in co-op (Paris's van, Alpine Escape's turret), your view turns with your own aim instead of following player 1's, and your shots go where you look. The gun itself still turns with player 1. Off: you see player 1's view and aim with a reticle across it. On this PC, at once."},
                 {"net_fullscreen", &net::fullscreen, nullptr, "Full-screen view per player",
                  "On by default: in an online match each PC draws only its own player's camera and HUD at full screen instead of split-screen. Applies fully at the next match or level."},
                 BotRow("net_bots", &net::bots, "Bots in a match (needs a restart)",

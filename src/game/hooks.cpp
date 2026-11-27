@@ -38,6 +38,8 @@ int GunStyle() { return -1; }  // the mounted guns are Driving.xbe's
 uint32_t Level() { return 0; }
 int PlayerPort() { return 0; }
 int Reticles(Mark*, int) { return 0; }
+bool TurnOwnView(uint32_t, uint32_t[12]) { return false; }
+void RestoreView(uint32_t, const uint32_t[12]) {}
 void ViewAngles(float, float) {}
 bool GunWaitsForShot() { return false; }
 int GuidedBy() { return 0; }

@@ -41,7 +41,8 @@ namespace {
 constexpr uint32_t kGame = 0x239220, kPovMode = 0x478, kPaused = 0x47C, kState = 0x234E24, kTime = 0x234E34;
 constexpr uint32_t kCameras = 0x1EC488, kWeapons = 0x23923C, kControlMap = 0x1E455C;
 constexpr uint32_t kShotVtable = 0x18C520, kCamPlace = 0x40, kCamAim = 0x180;
-constexpr float kMaxX = 0.80f, kMaxY = 0.58f;  // the reticle's reach, tangents (the game's 4:3 view is 0.65 by 0.49)
+constexpr float kMaxX = 1.20f, kMaxY = 0.70f;  // the aim's reach, tangents (the game's 4:3 view is 0.65 by 0.49): past
+                                               // the screen's edge, as each player's own view turns with it (OwnView)
 constexpr float kStickRate = 0.016f;           // tangent a tick at full deflection
 constexpr float kMouseRate = 0.0008f;          // tangent a count (default.xbe's radians a count)
 constexpr int kMaxExtra = net::kMaxPlayers;
@@ -233,6 +234,41 @@ uint32_t g_fired_by = 0;  // the other players whose trigger fired the car's wea
 // player 1 steered player 2's torpedo)
 std::atomic<int> g_guided_by{0};
 
+// this machine's player's own view on the mounted gun (own_view): their aim's tangents, false for player 1's view
+bool OwnView(float& x, float& y) {
+    int me = net::LocalPlayer();
+    if (!nf::own_view || !net::Active() || me <= 0 || me >= kMaxExtra || me == net::Driver() || !OnGun()) return false;
+    x = g_aim[me].x, y = g_aim[me].y;
+    return x != 0 || y != 0;
+}
+
+// the camera's basis turned by the aim (x, y): forward, right and up
+void Turned(uint32_t cam, float x, float y, float f[3], float r[3], float u[3]) {
+    float f0[3], r0[3], u0[3];
+    Basis(cam, f0, r0, u0);
+    float len = 0;
+    for (int i = 0; i < 3; i++) f[i] = f0[i] + x * r0[i] + y * u0[i], len += f[i] * f[i];
+    len = std::sqrt(len);
+    for (int i = 0; i < 3; i++) f[i] /= len;
+    float h = std::max(1e-4f, std::sqrt(f[0] * f[0] + f[2] * f[2]));
+    r[0] = f[2] / h, r[1] = 0, r[2] = -f[0] / h;
+    u[0] = f[1] * r[2] - f[2] * r[1], u[1] = f[2] * r[0] - f[0] * r[2], u[2] = f[0] * r[1] - f[1] * r[0];
+}
+
+// the aim (x, y) as tangents across the view turned by (mx, my); false behind it
+bool Across(float mx, float my, float& x, float& y) {
+    uint32_t cam = Camera();
+    float f0[3], r0[3], u0[3], f[3], r[3], u[3], d[3];
+    Basis(cam, f0, r0, u0);
+    Turned(cam, mx, my, f, r, u);
+    for (int i = 0; i < 3; i++) d[i] = f0[i] + x * r0[i] + y * u0[i];
+    float df = d[0] * f[0] + d[1] * f[1] + d[2] * f[2];
+    if (df < 0.05f) return false;
+    x = (d[0] * r[0] + d[1] * r[1] + d[2] * r[2]) / df;
+    y = (d[0] * u[0] + d[1] * u[1] + d[2] * u[2]) / df;
+    return true;
+}
+
 void HoldCarTrigger(bool others) {
     uint32_t car = Player(), mgr = kernel::R32(kWeapons), hud = kernel::R32(kHud);
     if (!car || !mgr) return;
@@ -390,11 +426,18 @@ void ExtraPlayers(X86Context& ctx, uint8_t* base) {
     HoldGunTrigger(!car && gun_fire);
     // the car's missiles find their targets: a reticle on a mounted gun alone (2026-11-14, John). Every machine has
     // every player's aim; the others' are drawn with others_reticles (2026-11-26, John)
+    // with this machine's own view (OwnView) its player's reticle is the view's centre, and the others' (player 1's
+    // too, whose crosshair the game draws at the centre of player 1's view) where they cross this one
+    float mx, my;
+    bool own = OwnView(mx, my);
     uint32_t shown = 0;
-    for (int p = 1; !car && p < players; p++) {
-        if (p == driver || (p != me && !nf::others_reticles) || net::PlayerLeft(p)) continue;
-        g_show_x[p] = g_aim[p].x / std::max(0.05f, g_tan_x.load());
-        g_show_y[p] = g_aim[p].y / std::max(0.05f, g_tan_y.load());
+    for (int p = 0; !car && p < players; p++) {
+        bool p1 = p == driver;
+        if ((p1 && !own) || (p != me && !nf::others_reticles) || net::PlayerLeft(p)) continue;
+        float x = p1 ? 0.0f : g_aim[p].x, y = p1 ? 0.0f : g_aim[p].y;
+        if (own && !Across(mx, my, x, y)) continue;
+        g_show_x[p] = x / std::max(0.05f, g_tan_x.load());
+        g_show_y[p] = y / std::max(0.05f, g_tan_y.load());
         shown |= 1u << p;
     }
     static bool said_mine = false, said_others = false;
@@ -421,6 +464,28 @@ int Reticles(Mark* out, int max) {
             out[n++] = {std::clamp(g_show_x[p].load(), -1.0f, 1.0f), std::clamp(g_show_y[p].load(), -1.0f, 1.0f),
                         kColours[std::min(p, 9)], p == me};
     return n;
+}
+
+// the gun's camera turned to this machine's player's aim while a view or the HUD's markers copy it (0x96980 takes its
+// rows +0x10 right, +0x20 up, +0x30 forward): their picture alone; what the game decides stays player 1's camera's
+bool TurnOwnView(uint32_t cam, uint32_t saved[12]) {
+    float mx, my;
+    if (!cam || cam != Camera() || !OwnView(mx, my)) return false;
+    float f0[3], r0[3], u0[3], f[3], r[3], u[3];
+    Basis(cam, f0, r0, u0);
+    Turned(cam, mx, my, f, r, u);
+    for (int row = 0; row < 3; row++) {
+        uint32_t at = cam + 0x10 + 0x10 * uint32_t(row);
+        float v[3], a = 0, b = 0, c = 0;
+        for (int i = 0; i < 3; i++) saved[row * 4 + i] = kernel::R32(at + 4 * i), v[i] = GetF(at + 4 * i);
+        for (int i = 0; i < 3; i++) a += r0[i] * v[i], b += u0[i] * v[i], c += f0[i] * v[i];
+        for (int i = 0; i < 3; i++) SetF(at + 4 * i, r[i] * a + u[i] * b + f[i] * c);
+    }
+    return true;
+}
+void RestoreView(uint32_t cam, const uint32_t saved[12]) {
+    for (int row = 0; row < 3; row++)
+        for (int i = 0; i < 3; i++) kernel::W32(cam + 0x10 + 0x10 * uint32_t(row) + 4 * uint32_t(i), saved[row * 4 + i]);
 }
 
 void ViewAngles(float tan_x, float tan_y) {

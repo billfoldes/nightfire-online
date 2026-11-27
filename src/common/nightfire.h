@@ -70,6 +70,10 @@ struct Mark {
 };
 int Reticles(Mark* out, int max);
 extern bool others_reticles;  // F1: the other players' reticles too
+extern bool own_view;  // F1: this machine's player looks along their own aim on a mounted gun
+// Driving.xbe: the camera turned to this machine's player's aim while a view copies it (src/driving/coop.cpp)
+bool TurnOwnView(uint32_t cam, uint32_t saved[12]);
+void RestoreView(uint32_t cam, const uint32_t saved[12]);
 void ViewAngles(float tan_x, float tan_y);  // Driving.xbe: the view just built, its half angles' tangents
 int GuidedBy();  // Driving.xbe in a session: the player steering the guided torpedo in flight (0: player 1, or none)
 bool GunWaitsForShot();  // Driving.xbe: player 1 on a mounted gun, no shot of theirs yet for the others to copy

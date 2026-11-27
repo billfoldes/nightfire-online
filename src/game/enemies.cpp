@@ -151,8 +151,13 @@ int g_skipped = 0;  // copies with no place this level, for the log
 
 // a character's setup (cdecl: the character): an enemy's health with the players
 X86_FUNC(sub_00042A90) {
-    uint32_t obj = R32(ctx.esp + 4);
+    uint32_t obj = R32(ctx.esp + 4), diag_ret = R32(ctx.esp);
     __imp__sub_00042A90(ctx, base);
+    if (getenv("NF_DIAG_CHARS")) {
+        uint32_t st = R32(obj + 0xBC);
+        LOGR("diag: character setup %08X from %08X type %02X team %d", obj, diag_ret, kernel::G<uint8_t>(obj + 0xDB),
+             st && kernel::G<uint8_t>(obj + 0xDB) == 2 ? int(kernel::G<uint8_t>(st + 0x44)) : -1);
+    }
     int extra = Toughness();
     if (!extra || !Enemy(obj)) return;
     uint32_t in = R32(obj + 0xBC);
@@ -188,10 +193,9 @@ X86_FUNC(sub_00031FD0) {
             if (in && kernel::G<uint8_t>(p.obj + 0xDB) == 0x02 && kernel::G<uint8_t>(in + 0x44) < 4) teams[kernel::G<uint8_t>(in + 0x44)]++;
             else {
                 other++;
-                uint32_t b8 = R32(p.obj + 0xB8), look = b8 ? R32(b8 + 0x74) : 0;
-                LOGR("co-op: placed character %08X type %02X state %08X team %u health %.1f model %08X", p.obj,
-                     kernel::G<uint8_t>(p.obj + 0xDB), in, in ? kernel::G<uint8_t>(in + 0x44) : 0xFFu,
-                     in ? GetF(in + 0x90) : -1.0f, look ? R32(look) : 0);
+                LOGR("co-op: placed character %08X type %02X state %08X team %u b8 %08X", p.obj,
+                     kernel::G<uint8_t>(p.obj + 0xDB), in, 0u,
+                     R32(p.obj + 0xB8));
             }
         }
         LOGR("co-op: the level placed %zu characters: teams 0-3 %d %d %d %d, %d not drones", placed.size(), teams[0],

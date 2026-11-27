@@ -147,6 +147,12 @@ Newest first. Each entry: date, what changed, what was learned, what's next.
 - **Unlock every reward** (unlock_rewards, the host's as the session starts, kStart flag 4): 0xB1740, which decodes
   the medals' rewards from the codename's 64 bits at 0x25D6E8 (the bits the cheat codes PASSPORT, Q LAB ... set),
   reads all 64 set; the save keeps what was earned. The hook fires as the codename loads.
+- **Each player's own view on a mounted gun** (net_own_view, F1 "You (this PC)", on by default; NF_OWN_VIEW): the
+  view's camera rows (0x96EB0, +0x10 right, +0x20 up, +0x30 forward) are turned to this machine's player's aim for the
+  draw and put back after it, so the game's state is untouched; the reticles are placed across the turned view
+  (player 1's too). The Paris van's scope, player 2 aiming right: their own view looks along their aim, off it
+  shows player 1's; both machines identical either way.
+- **F1's number popup stays open on − and +** (SDK overlay.cpp): it closes on Enter alone.
 
 ### 2026-11-25 - Through the relay, straight when it can; UPnP for hosts by IP address (v2.0.7)
 - **Direct connections through the relay** (net_direct, on by default, every player's own): the relay gives a host
