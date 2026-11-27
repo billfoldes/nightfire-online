@@ -542,6 +542,7 @@ private:
     void ResetLate(Late& l, const Target& t);
     ID3D12Resource* PrepareLateSource(Target& t, Late& l);
     void RecordLateCopy(Late& l, uint32_t slot, ID3D12Resource* src);
+    bool CpuWrote(Target& t);
 
     ComPtr<IDXGIFactory4> factory_;
     ComPtr<ID3D12Device> dev_;
@@ -632,6 +633,7 @@ private:
         uint64_t fence[kFrames] = {};
         uint64_t frame[kFrames] = {};
         uint64_t delivered = 0;
+        uint64_t sig = 0;  // guest memory as the last delivery left it
         uint32_t gw = 0;
         uint32_t gh = 0;
         uint32_t row_pitch = 0;
@@ -1110,7 +1112,7 @@ bool D3D12Backend::BindTargets(const State& s) {
         target_memo_ = {key, presents_ << 24 ^ targets_gen_, rt, ds};
     }
     if (!rt && !ds) return false;
-    if (rt && LatchCpuWrite(*rt)) {
+    if (rt && CpuWrote(*rt)) {
         if (++reloads_[rt->data] <= 3) LOGR("d3d12: target %08X %ux%u reloaded from guest memory before drawing (frame %llu)", rt->data,
                            rt->gw, rt->gh, (unsigned long long)presents_);
         UploadTarget(*rt, s.rt);
@@ -1622,7 +1624,7 @@ ID3D12Resource* D3D12Backend::BindTargetTexture(const State& s, int stage, const
         if (on) LOGR("d3d12: XBE_NO_TARGET_UPLOAD=1, sampled targets are not reloaded from guest memory");
         return on;
     }();
-    if (!t.depth && LatchCpuWrite(t)) {
+    if (!t.depth && CpuWrote(t)) {
         // logged in release builds, the first three of each target: a reload replaces what the GPU drew
         if (++reloads_[t.data] <= 3) LOGR("d3d12: sampled target %08X %ux%u reloaded from guest memory (frame %llu)%s", t.data, t.gw, t.gh,
                            (unsigned long long)presents_, no_upload ? ", skipped" : "");
@@ -2645,7 +2647,7 @@ void D3D12Backend::ClearTarget(Target& t, const State& s, const ClearArgs& c, st
         }
     } else {
         // pixels the CPU wrote before this clear go in first, a later upload would paint over the clear
-        if (LatchCpuWrite(t)) UploadTarget(t, s.rt);
+        if (CpuWrote(t)) UploadTarget(t, s.rt);
         Transition(t.res.Get(), t.state, D3D12_RESOURCE_STATE_RENDER_TARGET);
         float col[4];
         Color(c.color, col);
@@ -3146,7 +3148,7 @@ void D3D12Backend::Present(const Surface& front) {
     }
     ResizeSwap();
     Target* t = EnsureTarget(front, false);
-    if (t && LatchCpuWrite(*t)) UploadTarget(*t, front);
+    if (t && CpuWrote(*t)) UploadTarget(*t, front);
     if (t) Resolve(*t);
     if (ramp_dirty_) UploadGammaRamp();
     Transition(lut_.Get(), lut_state_, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE);
@@ -3522,8 +3524,18 @@ bool D3D12Backend::DeliverLate(uint32_t data) {
         D3D12_RANGE none{0, 0};
         l.rb[best]->Unmap(0, &none);
         l.delivered = l.fence[best];
+        l.sig = SurfaceSig(data, pitch * l.gh);
     }
     return true;
+}
+
+// LatchCpuWrite, less what DeliverLate wrote: it writes guest memory on the title's thread, while the render thread
+// still has the draws before the lock to run, and a sample there would paste the older copy over the target
+bool D3D12Backend::CpuWrote(Target& t) {
+    if (!LatchCpuWrite(t)) return false;
+    std::lock_guard lock(late_lock_);
+    auto it = late_.find(t.data);
+    return it == late_.end() || !it->second.delivered || it->second.sig != t.sig;
 }
 
 // a slot set for another size: its buffers go with the frame

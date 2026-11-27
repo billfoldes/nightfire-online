@@ -228,6 +228,7 @@ public:
     }
     bool DeliverLate(uint32_t data) override;
     void RecordLate(uint32_t data) override;
+    bool CpuWrote(Target& t);
     // the GPU finishes what was sent, so every report asked for so far is written (titles poll inside a frame)
     void Flush() override {
         ctx_->Flush();
@@ -255,6 +256,7 @@ private:
         uint64_t frame[kLateSlots] = {};  // 0 free
         std::vector<uint8_t> cpu;         // rows packed
         uint64_t cpu_frame = 0, delivered = 0;
+        uint64_t sig = 0;                 // guest memory as the last delivery left it
         uint32_t gw = 0, gh = 0, next = 0;
     };
     struct Ring {
@@ -684,7 +686,7 @@ bool D3D11Backend::BindTargets(const State& s) {
     Target* ds = depth && !(shared && colour) ? DepthTarget(s) : nullptr;
     if (rt && ds && (rt->w != ds->w || rt->h != ds->h)) ds = nullptr;
     if (!rt && !ds) return false;
-    if (rt && LatchCpuWrite(*rt)) {
+    if (rt && CpuWrote(*rt)) {
         if (++reloads_[rt->data] <= 3)
             LOGR("d3d11: target %08X %ux%u reloaded from guest memory before drawing (frame %llu)", rt->data, rt->gw,
                  rt->gh, (unsigned long long)presents_);
@@ -823,8 +825,18 @@ bool D3D11Backend::DeliverLate(uint32_t data) {
         uint8_t* dst = static_cast<uint8_t*>(kernel::HostPtr(data));
         for (uint32_t y = 0; y < l.gh; y++) std::memcpy(dst + size_t(y) * pitch, &l.cpu[size_t(y) * l.gw * 4], l.gw * 4);
         l.delivered = l.cpu_frame;
+        l.sig = SurfaceSig(data, pitch * l.gh);
     }
     return true;
+}
+
+// LatchCpuWrite, less what DeliverLate wrote: it writes guest memory on the title's thread, while the render thread
+// still has the draws before the lock to run, and a sample there would paste the older copy over the target
+bool D3D11Backend::CpuWrote(Target& t) {
+    if (!LatchCpuWrite(t)) return false;
+    std::lock_guard lock(late_lock_);
+    auto it = late_.find(t.data);
+    return it == late_.end() || !it->second.delivered || it->second.sig != t.sig;
 }
 
 void D3D11Backend::RecordLate(uint32_t data) {
@@ -1132,7 +1144,7 @@ void D3D11Backend::Clear(const State& s, uint32_t count, const uint8_t* rects, u
         bool whole = rs.size() == 1 && rs[0].left == 0 && rs[0].top == 0 && rs[0].right == LONG(t->w) &&
                      rs[0].bottom == LONG(t->h);
         // pixels the CPU wrote before this clear go in first, a later upload would paint over the clear
-        if (!t->depth && LatchCpuWrite(*t)) UploadTarget(*t, s.rt);
+        if (!t->depth && CpuWrote(*t)) UploadTarget(*t, s.rt);
         // a whole clear goes to the twin too and leaves both alike; part of one goes to res, the twin refreshed later
         if (!whole) Settle(*t);
         if (!t->depth) {
@@ -1245,7 +1257,7 @@ ID3D11ShaderResourceView* D3D11Backend::BindTargetTexture(const State& s, int st
     if (&t == draw_ds_) return nullptr;
     Settle(t);
     stages.reads.rt[stage] = true;
-    if (!t.depth && LatchCpuWrite(t)) {
+    if (!t.depth && CpuWrote(t)) {
         if (++reloads_[t.data] <= 3)
             LOGR("d3d11: sampled target %08X %ux%u reloaded from guest memory (frame %llu)", t.data, t.gw, t.gh,
                  (unsigned long long)presents_);
@@ -2063,7 +2075,7 @@ void D3D11Backend::CountFps() {
 void D3D11Backend::Present(const Surface& front) {
     ResizeSwap();
     Target* t = EnsureTarget(front, false);
-    if (t && LatchCpuWrite(*t)) UploadTarget(*t, front);
+    if (t && CpuWrote(*t)) UploadTarget(*t, front);
     if (t) Settle(*t);
     if (ramp_dirty_) UploadGammaRamp();
     ID3D11ShaderResourceView* frame = t ? t->srv.Get() : nullptr;
