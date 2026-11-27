@@ -543,6 +543,7 @@ private:
     ID3D12Resource* PrepareLateSource(Target& t, Late& l);
     void RecordLateCopy(Late& l, uint32_t slot, ID3D12Resource* src);
     bool CpuWrote(Target& t);
+    void SyncVertexTargets(const State& s);
 
     ComPtr<IDXGIFactory4> factory_;
     ComPtr<ID3D12Device> dev_;
@@ -2498,6 +2499,7 @@ void D3D12Backend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t 
     if (adjust.skip) return;
     DrawEnd draw_end{ext_};
     if (ext_) ext_->BeginDraw(s);
+    SyncVertexTargets(s);
     Assembled& a = asm_;
     if (!AssembleDraw(s, prim, start, count, indices, a)) return;
     // past the ring every upload is a buffer of its own: seconds lost on a frame that draws a whole level once
@@ -3536,6 +3538,21 @@ bool D3D12Backend::CpuWrote(Target& t) {
     std::lock_guard lock(late_lock_);
     auto it = late_.find(t.data);
     return it == late_.end() || !it->second.delivered || it->second.sig != t.sig;
+}
+
+// a target a draw reads as vertices (Driving.xbe's scope: its 128x128 copy of the screen, a colour for each of 16384
+// points): the console's GPU drew into that memory, this one into a texture of its own
+void D3D12Backend::SyncVertexTargets(const State& s) {
+    for (const auto& st : s.streams) {
+        if (!st.vb || !st.stride) continue;
+        const uint32_t data = mem::VirtualFromPhysical(::kernel::R32(st.vb + 4));
+        auto it = targets_.find(TargetMapKey(data, false));
+        if (it == targets_.end() || !it->second.drawn) continue;
+        static bool said = false;
+        if (!said) LOGR("d3d12: target %08X read as vertices, read back for each such draw", data);
+        said = true;
+        Sync(data, 0);
+    }
 }
 
 // a slot set for another size: its buffers go with the frame

@@ -229,6 +229,7 @@ public:
     bool DeliverLate(uint32_t data) override;
     void RecordLate(uint32_t data) override;
     bool CpuWrote(Target& t);
+    void SyncVertexTargets(const State& s);
     // the GPU finishes what was sent, so every report asked for so far is written (titles poll inside a frame)
     void Flush() override {
         ctx_->Flush();
@@ -837,6 +838,21 @@ bool D3D11Backend::CpuWrote(Target& t) {
     std::lock_guard lock(late_lock_);
     auto it = late_.find(t.data);
     return it == late_.end() || !it->second.delivered || it->second.sig != t.sig;
+}
+
+// a target a draw reads as vertices (Driving.xbe's scope: its 128x128 copy of the screen, a colour for each of 16384
+// points): the console's GPU drew into that memory, this one into a texture of its own
+void D3D11Backend::SyncVertexTargets(const State& s) {
+    for (const auto& st : s.streams) {
+        if (!st.vb || !st.stride) continue;
+        const uint32_t data = mem::VirtualFromPhysical(kernel::R32(st.vb + 4));
+        auto it = targets_.find(TargetMapKey(data, false));
+        if (it == targets_.end() || !it->second.drawn) continue;
+        static bool said = false;
+        if (!said) LOGR("d3d11: target %08X read as vertices, read back for each such draw", data);
+        said = true;
+        Sync(data, 0);
+    }
 }
 
 void D3D11Backend::RecordLate(uint32_t data) {
@@ -1791,6 +1807,7 @@ void D3D11Backend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t 
     DrawAdjust adjust;
     if (g_draw_filter) g_draw_filter(s, adjust);
     if (adjust.skip) return;
+    SyncVertexTargets(s);
     Assembled& a = asm_;
     if (!Assemble(s, prim, start, count, indices, a)) return;
     if (!BindTargets(s)) return;
