@@ -165,6 +165,11 @@ Newest first. Each entry: date, what changed, what was learned, what's next.
 - **F1 Controls lists what each key does** (SDK GameInfo::control_action, overlay.cpp's Keyboard section above
   Inputs while the keyboard plays): each input's action in play beside its keys, on foot from the game's controls
   page (crouch, action/reload, jump ...), in Driving.xbe its Driving Config; the Inputs table still changes them.
+- **A door's keypad is its user's alone** (src/game/pause.cpp): a keypad object (update 0xD1550, state 3) builds
+  its page (0x40000021, from 0xD1AEF) in the menu of the player who used it ([0x1F656C]+0x8DE), which counted as a
+  menu every player had: drawn on every screen, the mouse playing it on every machine. In a session it is now that
+  player's own menu as their pause is. Nightshift with player 2 put at its keypad (poked: [0x1F656C] their state,
+  the keypad's state 3): the keypad on player 2's screen alone, player 1 playing on.
 - **Nightshift's guards get their extra copies** (src/game/enemies.cpp): its 20 placed characters are turned into 6
   spawners' records at the level's start (0x30670, deleted with 0x2D080) and come back from the spawners (0x323E0)
   as the script's flags (0x1DF138 + 131..136) wake them, on team 3, not 1; the copies took team 1 alone. 0x364F0
