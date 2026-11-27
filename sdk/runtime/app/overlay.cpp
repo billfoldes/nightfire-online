@@ -1308,6 +1308,22 @@ void Controls(Settings& s) {
             Save();
         }
     }
+    if (kGame.control_action && s.keyboard) {
+        Section("Keyboard");
+        if (kGame.mouse_look && s.mouse_look) RowButton("Look and aim", "Mouse", "The mouse turns the view.");
+        static std::string helps[input::kControls];  // the footer shows the selected row's after the rows
+        for (int c = 0; c < input::kControls; c++) {
+            const char* action = kGame.control_action(c);
+            if (!action) continue;
+            std::string keys;
+            for (uint16_t k : s.keys[c])
+                if (std::string name = KeyToName(k); k && !name.empty()) keys += (keys.empty() ? "" : ", ") + name;
+            helps[c] = std::string("The controller's ") + input::ControlLabel(c) + ". Its keys change under Inputs below.";
+            ImGui::PushID(c);
+            RowButton(action, keys.empty() ? "-" : keys.c_str(), helps[c].c_str());
+            ImGui::PopID();
+        }
+    }
     Section("Inputs");
     ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, ImVec2(ImGui::GetStyle().FramePadding.x, ImGui::GetStyle().CellPadding.y));
     bool table = ImGui::BeginTable("controls", 4, ImGuiTableFlags_RowBg | ImGuiTableFlags_PadOuterX);

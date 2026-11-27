@@ -272,6 +272,9 @@ struct GameInfo {
     bool mouse_direct = false;
     // the keys each input::Control starts with (two Windows virtual keys, 0 none), else the SDK's (DefaultKeys)
     std::array<uint16_t, 2> (*default_keys)(int c) = nullptr;
+    // what each input::Control does in play ("Crouch"), nullptr for one it leaves unused: the Controls page's Keyboard
+    // section lists them with their keys, for a player who has not seen the game's controller page
+    const char* (*control_action)(int c) = nullptr;
     // a texture the title binds (SetTexture, its guest D3DBaseTexture) with its stage's palette (D3DPalette, 0 none), on
     // the title's thread before the draws that use it, and again when the stage's palette is set (SetPalette): the
     // title may change its texels in guest memory (EoN's button pictures), true when it did, and may give the
