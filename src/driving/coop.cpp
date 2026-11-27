@@ -64,9 +64,8 @@ int g_barrels = 0, g_turn = 0;
 bool g_have_task = false;
 uint32_t g_task_time = 0, g_task_gun_class = 0, g_task_gap = 0;  // g_task_gap: the game time between two of them
 
-std::atomic<bool> g_show{false};
-std::atomic<float> g_show_x{0}, g_show_y{0}, g_tan_x{0.65f}, g_tan_y{0.49f};
-std::atomic<int> g_show_player{0};
+std::atomic<uint32_t> g_shown{0};  // the players whose reticles are drawn, a bit each (g_show_x/y theirs)
+std::atomic<float> g_show_x[kMaxExtra], g_show_y[kMaxExtra], g_tan_x{0.65f}, g_tan_y{0.49f};
 
 // NF_COOP_TEST=x,y (the harness, alone): a second player aiming there and firing whenever the gun can
 bool g_test = false;
@@ -350,7 +349,7 @@ void ExtraPlayers(X86Context& ctx, uint8_t* base) {
     if (!on) {
         if (g_car_held) HoldCarTrigger(false);
         if (g_gun_held) HoldGunTrigger(false);
-        g_show = false;
+        g_shown = 0;
         for (Aim& a : g_aim) a.next = 0;
         return;
     }
@@ -389,32 +388,39 @@ void ExtraPlayers(X86Context& ctx, uint8_t* base) {
     }
     if (car || g_car_held) HoldCarTrigger(car && others_fire);
     HoldGunTrigger(!car && gun_fire);
-    // the car's missiles find their targets: a reticle on a mounted gun alone (2026-11-14, John)
-    if (!car && me > 0 && me < players && me != driver) {
-        static bool shown = false;
-        if (!shown) {
-            shown = true;
-            LOGR("driving co-op: this machine's player %d has a reticle on the mounted gun", me + 1);
-        }
-        g_show_x = g_aim[me].x / std::max(0.05f, g_tan_x.load());
-        g_show_y = g_aim[me].y / std::max(0.05f, g_tan_y.load());
-        g_show_player = me;
-        g_show = true;
-    } else {
-        g_show = false;
+    // the car's missiles find their targets: a reticle on a mounted gun alone (2026-11-14, John). Every machine has
+    // every player's aim; the others' are drawn with others_reticles (2026-11-26, John)
+    uint32_t shown = 0;
+    for (int p = 1; !car && p < players; p++) {
+        if (p == driver || (p != me && !nf::others_reticles) || net::PlayerLeft(p)) continue;
+        g_show_x[p] = g_aim[p].x / std::max(0.05f, g_tan_x.load());
+        g_show_y[p] = g_aim[p].y / std::max(0.05f, g_tan_y.load());
+        shown |= 1u << p;
     }
+    static bool said_mine = false, said_others = false;
+    if (!said_mine && (shown & (1u << me))) {
+        said_mine = true;
+        LOGR("driving co-op: this machine's player %d has a reticle on the mounted gun", me + 1);
+    }
+    if (!said_others && (shown & ~(1u << me))) {
+        said_others = true;
+        LOGR("driving co-op: the other players' reticles are shown on the mounted gun");
+    }
+    g_shown = shown;
 }
 }  // namespace
 
 namespace nf {
-bool Reticle(float& x, float& y, uint32_t& colour) {
+int Reticles(Mark* out, int max) {
     static const uint32_t kColours[] = {0xFFFFFFFFu, 0xFFFFB040u, 0xFF60E060u, 0xFF40E0FFu, 0xFFFF60FFu,
                                         0xFF4090FFu, 0xFFFFFF60u, 0xFFA0A0FFu, 0xFF60FFC0u, 0xFFC0C0C0u};  // ImGui's ABGR
-    if (!g_show) return false;
-    x = std::clamp(g_show_x.load(), -1.0f, 1.0f);
-    y = std::clamp(g_show_y.load(), -1.0f, 1.0f);
-    colour = kColours[std::clamp(g_show_player.load(), 0, 9)];
-    return true;
+    uint32_t shown = g_shown;
+    int me = net::LocalPlayer(), n = 0;
+    for (int p = 0; p < kMaxExtra && n < max; p++)
+        if (shown & (1u << p))
+            out[n++] = {std::clamp(g_show_x[p].load(), -1.0f, 1.0f), std::clamp(g_show_y[p].load(), -1.0f, 1.0f),
+                        kColours[std::min(p, 9)], p == me};
+    return n;
 }
 
 void ViewAngles(float tan_x, float tan_y) {

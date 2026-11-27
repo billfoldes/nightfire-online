@@ -37,7 +37,7 @@ bool MenuKeys() {  // not the pause page (0xAD520)
 int GunStyle() { return -1; }  // the mounted guns are Driving.xbe's
 uint32_t Level() { return 0; }
 int PlayerPort() { return 0; }
-bool Reticle(float&, float&, uint32_t&) { return false; }
+int Reticles(Mark*, int) { return 0; }
 void ViewAngles(float, float) {}
 bool GunWaitsForShot() { return false; }
 int GuidedBy() { return 0; }

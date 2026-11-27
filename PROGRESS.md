@@ -123,6 +123,13 @@ Newest first. Each entry: date, what changed, what was learned, what's next.
   under it, preferring the least open ones (toward walls and corners, out of walkways); no place, no copy. The
   placed characters' turn is (0, heading in radians, 0). The Exchange in co-op: 12 copies placed, both machines
   identical; the probes tell walls apart (30 m probes mostly blocked, some sides refused).
+- **The sniper scope's blurred surround is the game's own**: the Paris van tutorial zoomed in (LT, Driving.xbe
+  vblank ~1600 on) rendered by the CPU reference renderer (REF=40) shows the same soft, dimmed view outside the
+  scope circle and a sharp one inside, so the Windows renderer draws what the Xbox does. Not changed.
+- **The other players' reticles on the mounted guns** (net_others_reticles, F1 "You (this PC)", off by default):
+  every machine already steps every player's aim (src/driving/coop.cpp g_aim), so nf::Reticles now hands the
+  interface each shown player's, this machine's own as before and the others' (not player 1's, the game's crosshair)
+  smaller and fainter in their colour.
 
 ### 2026-11-25 - Through the relay, straight when it can; UPnP for hosts by IP address (v2.0.7)
 - **Direct connections through the relay** (net_direct, on by default, every player's own): the relay gives a host

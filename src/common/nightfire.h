@@ -58,9 +58,16 @@ int GunStyle();
 uint32_t Level();  // Driving.xbe: the mission's level id (its launch data's, Deep Descent 0x09000002), 0 in default.xbe
 int PlayerPort();  // Driving.xbe: the controller port the game plays (its launch data's), 0 in default.xbe
 bool SkipHeld();   // this machine's controller 1 (any of its controllers, the keyboard, the mouse) holds A, B or START
-// Driving.xbe's mounted guns in a session (src/driving/coop.cpp): this machine's player's reticle, x and y -1 to 1
-// across the frame (up positive), its colour ImGui's; false with none (player 1, the car, default.xbe)
-bool Reticle(float& x, float& y, uint32_t& colour);
+// Driving.xbe's mounted guns in a session (src/driving/coop.cpp): the reticles to draw, x and y -1 to 1 across the
+// frame (up positive), the colour ImGui's; this machine's player's (none for player 1) and, with others_reticles,
+// the other players' but player 1's (the game draws that one). None in the car or default.xbe
+struct Mark {
+    float x, y;
+    uint32_t colour;
+    bool mine;
+};
+int Reticles(Mark* out, int max);
+extern bool others_reticles;  // F1: the other players' reticles too
 void ViewAngles(float tan_x, float tan_y);  // Driving.xbe: the view just built, its half angles' tangents
 int GuidedBy();  // Driving.xbe in a session: the player steering the guided torpedo in flight (0: player 1, or none)
 bool GunWaitsForShot();  // Driving.xbe: player 1 on a mounted gun, no shot of theirs yet for the others to copy

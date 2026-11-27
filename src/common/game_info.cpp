@@ -35,6 +35,7 @@ namespace nf {
 bool skip_intro = true;
 bool skip_tutorial = true;
 bool hide_hud = false;
+bool others_reticles = false;
 bool unlock_missions = false;
 bool unlock_multiplayer = false;
 uint32_t fov_percent = 100;
@@ -430,7 +431,7 @@ void NetRumble(int port, uint16_t& left, uint16_t& right) {
     else left = right = 0;  // the other players' devices are on their machines
 }
 
-// GameInfo::ui: this machine's player's reticle on a mounted gun (nf::Reticle), over the frame where the renderers
+// GameInfo::ui: the co-op reticles on a mounted gun (nf::Reticles), over the frame where the renderers
 // place it (centred, app::FrameAspect's shape); the harness draws no interface
 #if __has_include(<imgui.h>)
 // a driving mission's notice to the player whose machine takes the car from player 1, for a few seconds
@@ -458,22 +459,28 @@ void Ui(double) {
     ImVec2 size = ImGui::GetIO().DisplaySize;
     float aspect = app::FrameAspect(), vw = std::min(size.x, size.y * aspect), vh = vw / aspect;
     if (nf::kDriving) TookCarNotice(ImGui::GetForegroundDrawList(), size, vh);
-    float x, y;
-    uint32_t colour;
-    if (!nf::Reticle(x, y, colour)) return;
-    ImVec2 c{size.x / 2 + x * vw / 2, size.y / 2 - y * vh / 2};
-    float r = vh * 0.022f, t = std::max(1.5f, vh / 360), gap = r * 0.45f, arm = r * 1.6f;
+    nf::Mark marks[16];
+    int n = nf::Reticles(marks, 16);
     ImDrawList* dl = ImGui::GetForegroundDrawList();
-    uint32_t shadow = IM_COL32(0, 0, 0, 140);
-    for (int pass = 0; pass < 2; pass++) {
-        uint32_t col = pass ? colour : shadow;
-        float w = pass ? t : t + 2;
-        dl->AddCircle(c, r, col, 32, w);
-        dl->AddLine({c.x - arm, c.y}, {c.x - gap, c.y}, col, w);
-        dl->AddLine({c.x + gap, c.y}, {c.x + arm, c.y}, col, w);
-        dl->AddLine({c.x, c.y - arm}, {c.x, c.y - gap}, col, w);
-        dl->AddLine({c.x, c.y + gap}, {c.x, c.y + arm}, col, w);
-    }
+    // the others' smaller and fainter, under this machine's own
+    for (int mine = 0; mine < 2; mine++)
+        for (int i = 0; i < n; i++) {
+            const nf::Mark& m = marks[i];
+            if (m.mine != bool(mine)) continue;
+            ImVec2 c{size.x / 2 + m.x * vw / 2, size.y / 2 - m.y * vh / 2};
+            float r = vh * (mine ? 0.022f : 0.016f), t = std::max(1.5f, vh / 360), gap = r * 0.45f, arm = r * 1.6f;
+            uint32_t shadow = IM_COL32(0, 0, 0, mine ? 140 : 90);
+            uint32_t colour = mine ? m.colour : (m.colour & 0x00FFFFFFu) | 0xB0000000u;
+            for (int pass = 0; pass < 2; pass++) {
+                uint32_t col = pass ? colour : shadow;
+                float w = pass ? t : t + 2;
+                dl->AddCircle(c, r, col, 32, w);
+                dl->AddLine({c.x - arm, c.y}, {c.x - gap, c.y}, col, w);
+                dl->AddLine({c.x + gap, c.y}, {c.x + arm, c.y}, col, w);
+                dl->AddLine({c.x, c.y - arm}, {c.x, c.y - gap}, col, w);
+                dl->AddLine({c.x, c.y + gap}, {c.x, c.y + arm}, col, w);
+            }
+        }
 #endif
 }
 
@@ -611,6 +618,8 @@ const app::GameInfo app::kGame = {
                  net::kHandicapChoices, net::HandicapChoiceName},
                 {"net_default_names", &net::default_names, nullptr, "Streamer mode: hide typed names and IP addresses",
                  "On this PC, at once: the other players' typed names are drawn as Player 1, Player 2 and so on; the Server Browser lists each game as Game and a number of its own instead of its host's name (saved servers too); and no IP address shows, in the Server Browser, its boxes, the host's address row or the connection screen (typed ones as dots). A locked game's join code is hidden on its host's connection screen too; C still copies it."},
+                {"net_others_reticles", &nf::others_reticles, nullptr, "Show the other players' reticles",
+                 "On this PC, at once: on the driving missions' mounted guns in co-op (Paris's van, Alpine Escape's turret), each other player's reticle is drawn too, smaller and fainter than yours, in their color. Player 1 aims with the game's own crosshair."},
                 {"net_fullscreen", &net::fullscreen, nullptr, "Full-screen view per player",
                  "On by default: in an online match each PC draws only its own player's camera and HUD at full screen instead of split-screen. Applies fully at the next match or level."},
                 BotRow("net_bots", &net::bots, "Bots in a match (needs a restart)",
