@@ -228,7 +228,9 @@ bool RowNumber(const char* label, uint32_t* v, const char* help = nullptr) {
             *v = uint32_t(std::max(n, 0));
             changed = true;
         }
-        if (ImGui::IsItemDeactivatedAfterEdit()) ImGui::CloseCurrentPopup();
+        // its - and + count as an edit ended too: the popup stays for them, Enter closes it
+        if (ImGui::IsKeyPressed(ImGuiKey_Enter, false) || ImGui::IsKeyPressed(ImGuiKey_KeypadEnter, false))
+            ImGui::CloseCurrentPopup();
         ImGui::EndPopup();
     }
     ImGui::PopStyleVar();
