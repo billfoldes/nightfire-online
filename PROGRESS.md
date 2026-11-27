@@ -116,6 +116,20 @@ Newest first. Each entry: date, what changed, what was learned, what's next.
 
 ## Log
 
+### 2026-11-27 - The scope's blurred surround lines up with its sharp view: a 2X buffer's texels are its samples
+- **The cause, found** (SDK state.h FrameTexels, d3d_common.cpp, reference_renderer.cpp, d3d8.cpp; John, logs 025 and
+  026: still the same): Driving.xbe's present parameters ask for multisample 0x1121 (two samples across; the
+  CreateDevice log line now prints it). The console keeps every sample, so its back buffer is 1280x480 in memory, and
+  the scope's copy of the screen (draw 140 at frame 2100: a quad into 128x128 target 0161B000 reading the back
+  buffer 01986000 through a 640x480 linear header) gives u from 0 to 1280. The runtime makes the buffer 640 wide (the
+  renderer scales instead), so u ran over the screen twice and the blur, built from that copy, showed the scene at
+  half its x: the misplaced layer. The reference renderer at 60 and 240 fps did the same, so it was never D3D12's
+  alone. Now State keeps the frame buffers' data and made samples, and a linear texture over a frame buffer takes its
+  texel coordinates over the samples (texsize, and the reference renderer's rect divide). Headless, frame 2200 of the
+  scripted zoom: the blurred wheel continues the sharp one at the scope's edge (before: a second wheel at half x).
+- The two entries below were real fixes but not this one: the scope's points do read 0161B000 as vertices, and that
+  read-back stays.
+
 ### 2026-11-27 - The scope's glow points take their colours from this frame's picture
 - **The real cause of the scope's misplaced layer** (SDK d3d12.cpp and d3d11.cpp SyncVertexTargets; John, v2.0.11:
   no change): zoomed, Driving.xbe draws 16384 points (draw 376, into 0160B000) whose second vertex stream is the
