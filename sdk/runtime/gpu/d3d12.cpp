@@ -543,7 +543,7 @@ private:
     ID3D12Resource* PrepareLateSource(Target& t, Late& l);
     void RecordLateCopy(Late& l, uint32_t slot, ID3D12Resource* src);
     bool CpuWrote(Target& t);
-    void SyncVertexTargets(const State& s);
+    void SyncVertexTargets(const State& s, uint32_t prim, uint32_t count);
 
     ComPtr<IDXGIFactory4> factory_;
     ComPtr<ID3D12Device> dev_;
@@ -2499,7 +2499,7 @@ void D3D12Backend::Draw(const State& s, uint32_t prim, uint32_t start, uint32_t 
     if (adjust.skip) return;
     DrawEnd draw_end{ext_};
     if (ext_) ext_->BeginDraw(s);
-    SyncVertexTargets(s);
+    SyncVertexTargets(s, prim, count);
     Assembled& a = asm_;
     if (!AssembleDraw(s, prim, start, count, indices, a)) return;
     // past the ring every upload is a buffer of its own: seconds lost on a frame that draws a whole level once
@@ -3542,11 +3542,19 @@ bool D3D12Backend::CpuWrote(Target& t) {
 
 // a target a draw reads as vertices (Driving.xbe's scope: its 128x128 copy of the screen, a colour for each of 16384
 // points): the console's GPU drew into that memory, this one into a texture of its own
-void D3D12Backend::SyncVertexTargets(const State& s) {
-    for (const auto& st : s.streams) {
+void D3D12Backend::SyncVertexTargets(const State& s, uint32_t prim, uint32_t count) {
+    // many points (the scope's 16384): what each stream is, the first few times
+    static int shown = 0;
+    const bool show = prim == 1 && count >= 4096 && shown < 4;
+    if (show) shown++;
+    for (uint32_t k = 0; k < s.streams.size(); k++) {
+        const auto& st = s.streams[k];
         if (!st.vb || !st.stride) continue;
         const uint32_t data = mem::VirtualFromPhysical(::kernel::R32(st.vb + 4));
         auto it = targets_.find(TargetMapKey(data, false));
+        if (show)
+            LOGR("d3d12: %u points (frame %llu), stream %u at %08X stride %u: %s", count, (unsigned long long)presents_, k, data,
+                 st.stride, it == targets_.end() ? "no target" : it->second.drawn ? "a target drawn on the GPU" : "a target, not drawn since read");
         if (it == targets_.end() || !it->second.drawn) continue;
         static bool said = false;
         if (!said) LOGR("d3d12: target %08X read as vertices, read back for each such draw", data);
