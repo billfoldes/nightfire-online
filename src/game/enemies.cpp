@@ -37,7 +37,6 @@ using kernel::W32;
 
 constexpr uint32_t kPlacedRet = 0xA56B9;  // 0xA4BC0's call of 0x2FCF0: a level's placed character
 constexpr uint32_t kPointSize = 0xAC, kRecordSize = kPointSize - 8;
-constexpr uint8_t kEnemyTeam = 1;
 // a copy's place: kStep from the original at one of these turns from its heading, whose way there is clear of walls
 // and characters a little past it (kRoom) and which has a floor under it (kFloor down). Of those, the ones with the
 // least open space beyond (clear to kOpen's distances) come first: the copies stand toward the walls and corners, not
@@ -65,7 +64,9 @@ int Toughness() { return net::CoopTougherEnemies() ? Extra() : 0; }   // net_coo
 
 bool Enemy(uint32_t obj) {
     uint32_t in = obj ? R32(obj + 0xBC) : 0;
-    return in && kernel::G<uint8_t>(obj + 0xDB) == 0x02 && kernel::G<uint8_t>(in + 0x44) == kEnemyTeam;
+    if (!in || kernel::G<uint8_t>(obj + 0xDB) != 0x02) return false;
+    uint8_t team = kernel::G<uint8_t>(in + 0x44);  // 1 most levels' enemies, 3 Nightshift's guards (0x364F0)
+    return team == 1 || team == 3;
 }
 
 // a cdecl call of the game's with its arguments, every register as it was after (eax the call's answer returned)
@@ -186,21 +187,6 @@ X86_FUNC(sub_00031FD0) {
     std::vector<PlacedOne> placed;
     placed.swap(g_placed);
     int extra = Copies(), made = 0;
-    if (extra) {
-        int teams[4] = {}, other = 0;
-        for (const PlacedOne& p : placed) {
-            uint32_t in = R32(p.obj + 0xBC);
-            if (in && kernel::G<uint8_t>(p.obj + 0xDB) == 0x02 && kernel::G<uint8_t>(in + 0x44) < 4) teams[kernel::G<uint8_t>(in + 0x44)]++;
-            else {
-                other++;
-                LOGR("co-op: placed character %08X type %02X state %08X team %u b8 %08X", p.obj,
-                     kernel::G<uint8_t>(p.obj + 0xDB), in, 0u,
-                     R32(p.obj + 0xB8));
-            }
-        }
-        LOGR("co-op: the level placed %zu characters: teams 0-3 %d %d %d %d, %d not drones", placed.size(), teams[0],
-             teams[1], teams[2], teams[3], other);
-    }
     if (!extra) return nf::ReportHeap();
     Scratch s(ctx, 0x20 + kDataSize);
     g_skipped = 0;

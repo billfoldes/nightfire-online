@@ -153,6 +153,12 @@ Newest first. Each entry: date, what changed, what was learned, what's next.
   (player 1's too). The Paris van's scope, player 2 aiming right: their own view looks along their aim, off it
   shows player 1's; both machines identical either way.
 - **F1's number popup stays open on − and +** (SDK overlay.cpp): it closes on Enter alone.
+- **Nightshift's guards get their extra copies** (src/game/enemies.cpp): its 20 placed characters are turned into 6
+  spawners' records at the level's start (0x30670, deleted with 0x2D080) and come back from the spawners (0x323E0)
+  as the script's flags (0x1DF138 + 131..136) wake them, on team 3, not 1; the copies took team 1 alone. 0x364F0
+  (who a drone fights) puts teams 2 and 3 on one side and 1 on the other; Enemy() now takes 1 and 3 (2 is one
+  character in Paris, left alone). With the flags poked: each spawned guard one more beside it, x1.5 health, the
+  same on both machines.
 
 ### 2026-11-25 - Through the relay, straight when it can; UPnP for hosts by IP address (v2.0.7)
 - **Direct connections through the relay** (net_direct, on by default, every player's own): the relay gives a host
