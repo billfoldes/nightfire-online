@@ -896,6 +896,15 @@ X86_FUNC(sub_00025D10) {
     }
 }
 
+// A match of exactly 3 players fills the split screen's empty quarter: 0x252E0 puts sprite 5 (0x300013C, the 007
+// panel) at (320, 240). Each player's own full-screen view has no empty quarter: the panel and the match clock over
+// it were a fourth player's square on every screen (2026-11-27, John: a phantom 4th player with 3 people)
+X86_EXTERN_FUNC(__imp__sub_000252E0);
+X86_FUNC(sub_000252E0) {
+    if (net::FullScreenView()) return;
+    __imp__sub_000252E0(ctx, base);
+}
+
 X86_FUNC(sub_00025190) {
     uint32_t i = R32(ctx.esp + 4) & 0xFFFF;
     float fov = GetF(ctx.esp + 8);
@@ -984,6 +993,17 @@ static void SpawnLowBots(X86Context& ctx, uint8_t* base, int players, int count)
     LOGR("nightfire: %d bots in the slots below 4", spawned);
 }
 
+// The match clock (0xA25F0's sprite [0x2637D8], centred) sits by the split screen's layout: at the top (y 56) for one
+// player or two side by side, in the empty quarter (480, 360) for three, the middle for the rest. Each player's own
+// full-screen view is one player's: the clock at its top
+static void OneViewClock() {
+    constexpr uint32_t kMatchClock = 0x2637D8;
+    uint32_t clock = R32(kMatchClock);
+    if (!net::FullScreenView() || !ValidPtr(clock, 0x28)) return;
+    kernel::G<int16_t>(clock + 0x24) = 0x140;
+    kernel::G<int16_t>(clock + 0x26) = 0x38;
+}
+
 // spawns all players (0..3) and bots (4..9) for a multiplayer match
 X86_FUNC(sub_000A25F0) {
     ApplyCharacterSelections();
@@ -1013,6 +1033,7 @@ X86_FUNC(sub_000A25F0) {
         __imp__sub_000A25F0(ctx, base);
         // in the match the count is read as whether there are bots at all: the menu's own again, unless that says
         // otherwise than the match has
+        OneViewClock();
         if (menu && (menu_bots != 0) == (want != 0)) kernel::G<uint8_t>(kMenuBotCount) = uint8_t(menu_bots);
         else if (menu) kernel::G<uint8_t>(kMenuBotCount) = uint8_t(std::min(want, kBotSlots));
         if (low) SpawnLowBots(ctx, base, total, int(low));

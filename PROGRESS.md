@@ -161,6 +161,11 @@ Newest first. Each entry: date, what changed, what was learned, what's next.
   62.5 of 1/60 at 60), 144 at 144. Never above the frame cap (picking a rate raises it) or, with vsync, the
   monitor's refresh; 60 in a session (both kinds of co-op tested asking for 120: 60, no drift); driving takes it
   as Driving.xbe boots.
+- **No phantom fourth player in a 3-person match** (John's logs 006/017/018, 3 players and 7 bots): a match of
+  exactly 3 fills the split screen's empty quarter with the 007 panel (0x252E0, sprite 5 at 320, 240) and puts the
+  match clock in it (0xA25F0, [0x2637D8] at 480, 360); in each player's full-screen view that quarter sat over
+  everyone's picture. With full-screen view the panel is not made and the clock is at the top (320, 56), as one
+  player's. Headless, 3 machines in a match: gone, the clock at the top.
 - **F1's number popup stays open on − and +** (SDK overlay.cpp): it closes on Enter alone.
 - **F1 Controls lists what each key does** (SDK GameInfo::control_action, overlay.cpp's Keyboard section above
   Inputs while the keyboard plays): each input's action in play beside its keys, on foot from the game's controls
