@@ -35,6 +35,9 @@ Under `<short>\` beside itself:
   to their folder, or their disc image hard linked (copied when it is on another drive).
 - `launcher.log`, `launcher.json` (the game chosen).
 
+The game chosen is also kept for the user in `%LOCALAPPDATA%\<short name>\launcher.json`, so a launcher unzipped in
+a new folder (a new version) starts with it; with none there, it looks in the installs beside its own folder.
+
 The build runs with the environment Visual Studio's developer prompt would set (INCLUDE, LIB, PATH) and links with
 lld. Downloads resume and every step can run again: what is done is kept.
 

@@ -2,6 +2,7 @@
 //   launcher_cli <game.json> <root> plan               the tools and their downloads (fetches the manifests)
 //   launcher_cli <game.json> <root> tool <id>          download and unpack one tool (not "winsdk" here)
 //   launcher_cli <game.json> <root> game <iso|folder>  check a copy and link it into play/assets
+//   launcher_cli <game.json> <root> saved              the copy remembered (this root's, the user's, a sibling's)
 //   launcher_cli <game.json> <root> source             clone or update the source, put the xbe in it
 //   launcher_cli <game.json> <root> env                the build's environment
 //   launcher_cli <game.json> <root> latest [version]   the newest release, and whether a launcher of version is behind
@@ -155,6 +156,12 @@ int main(int argc, char** argv) {
         bool ok = b.SetGame(c, error);
         std::printf("set: %s %s\n", ok ? "ok" : "failed", error.c_str());
         return ok ? 0 : 1;
+    }
+    if (cmd == "saved") {  // the copy remembered, and whether another install remembered it
+        bool elsewhere = false;
+        fs::path p = b.SavedGame(&elsewhere);
+        std::printf("saved: %s%s\n", p.empty() ? "none" : p.string().c_str(), elsewhere ? " (elsewhere)" : "");
+        return p.empty() ? 1 : 0;
     }
     if (cmd == "source") {
         bool ok = b.GetSource(error) && b.PutXbe(error);

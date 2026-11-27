@@ -47,7 +47,13 @@ public:
 
     // the player's copy: checked, remembered, linked into play\assets
     bool SetGame(const GameCheck& copy, std::string& error);
-    std::filesystem::path SavedGame() const;  // the copy remembered from last time, empty if none
+    // the copy remembered from last time, empty if none: this folder's launcher.json, else the one remembered for this
+    // user (UserFile), else another install's beside this one's folder (an older version unzipped elsewhere).
+    // *elsewhere: it came from one of those, and SetGame has not linked it here yet
+    std::filesystem::path SavedGame(bool* elsewhere = nullptr) const;
+    // the player's choices kept across installs: %LOCALAPPDATA%\<short name>\launcher.json ($XDG_DATA_HOME or
+    // ~/.local/share off Windows), empty when there is no such folder
+    std::filesystem::path UserFile() const;
 
     // the whole build: tools, source, xbe, compile, install. Returns false with the reason (also in launcher.log)
     bool BuildAll(std::string& error);

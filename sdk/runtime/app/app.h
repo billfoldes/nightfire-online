@@ -48,6 +48,9 @@ struct Settings {
     bool mouse_look = true;
     uint32_t mouse_sensitivity = 100;  // percent
     bool mouse_invert_y = false;
+    uint32_t stick_deadzone = 0;     // percent of a controller stick's travel around its centre read as at rest, then
+                                     // the rest stretched to full: on top of the game's own (a drifting stick)
+    uint32_t volume = 100;           // the sound's master level, percent (GameInfo::default_volume when unsaved)
     uint32_t monitor = 0;            // 0 the primary display, n the nth display Windows lists
     bool pause_unfocused = false;    // the game stands still, silent, while its window is not in front
     bool show_fps = false;           // frames a second in a corner
@@ -245,6 +248,8 @@ struct GameInfo {
     // black 32x32 texture from x 0 to 81 and 559 to 640 beside the sight) keeps that edge, as an untextured one always
     // does (gpu::DrawSpan), so the bars reach the screen's sides; off, they are squeezed with the rest of the 2D
     bool edge_bars = false;
+    // Settings::volume when the settings file has none (a fresh install, or one from before the slider), percent
+    uint32_t default_volume = 100;
     // the textures 2D draws use (pretransformed or as above; swizzled, up to 512 texels) are enlarged two or four times
     // with sharp edges (gpu::Sharpen2D, a background thread) and drawn so: text and HUD pictures stay crisp at high
     // resolutions (Settings::sharp_2d turns it off)

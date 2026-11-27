@@ -230,14 +230,22 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
     };
     std::error_code ec;
     app.agreed = fs::exists(app.root / "agreed.txt", ec);
-    fs::path saved = app.builder->SavedGame();
+    bool elsewhere = false;
+    fs::path saved = app.builder->SavedGame(&elsewhere);
     if (!saved.empty()) app.copy = CheckGame(app.game, saved);
+    bool link_saved = elsewhere && app.copy.ok;  // another install's choice: linked here by the first job
+    if (link_saved) app.builder->Log("game: " + U8(saved) + " as another install of this launcher chose it");
     app.music = app.builder->SavedMusic();
     app.build_bytes = app.builder->BuildFilesBytes();
     app.old_bytes = app.builder->OldBuildBytes();
     // a new version: a newer release's launcher looked for once at start (a release launcher only), and the game
     // when it was built before
-    app.Start([&app](std::string& err) {
+    app.Start([&app, link_saved](std::string& err) {
+        if (link_saved) {
+            GameCheck copy = app.copy;
+            std::string e;
+            if (!app.builder->SetGame(copy, e)) app.builder->Log("game: could not use the copy another install chose: " + e);
+        }
         if (IsReleaseVersion(app.game.version)) {
             Release r;
             std::string e;

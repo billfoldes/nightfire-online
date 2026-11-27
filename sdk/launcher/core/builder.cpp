@@ -115,12 +115,44 @@ bool Builder::Built() const {
     return !Prebuilt() || fs::exists(PlayDir() / (game_.exe + ".dll"), ec);  // the code is built after the package is in
 }
 
-fs::path Builder::SavedGame() const {
+namespace {
+// a launcher.json's "game", empty when it has none
+fs::path GameIn(const fs::path& file) {
     std::string text;
-    if (!ReadAll(root_ / "launcher.json", text)) return {};
+    if (!ReadAll(file, text)) return {};
     json j = json::parse(text, nullptr, false);
-    if (j.is_discarded()) return {};
-    return PathOf(j.value("game", ""));
+    if (j.is_discarded() || !j.is_object() || !j.contains("game") || !j["game"].is_string()) return {};
+    return PathOf(j["game"].get<std::string>());
+}
+}  // namespace
+
+fs::path Builder::UserFile() const {
+    fs::path base;
+    if (std::string local = platform_.GetEnv("LOCALAPPDATA"); !local.empty()) base = PathOf(local);
+    else if (std::string xdg = platform_.GetEnv("XDG_DATA_HOME"); !xdg.empty()) base = PathOf(xdg);
+    else if (std::string home = platform_.GetEnv("HOME"); !home.empty()) base = PathOf(home) / ".local" / "share";
+    return base.empty() ? fs::path() : base / PathOf(game_.short_name) / "launcher.json";
+}
+
+fs::path Builder::SavedGame(bool* elsewhere) const {
+    if (elsewhere) *elsewhere = false;
+    std::error_code ec;
+    fs::path own = GameIn(root_ / "launcher.json");
+    if (!own.empty()) return own;
+    std::vector<fs::path> others;
+    if (fs::path user = UserFile(); !user.empty()) others.push_back(user);
+    // <folder>\<an older install>\<short name>\launcher.json, this install being <folder>\<its own>\<short name>
+    fs::path folder = root_.parent_path().parent_path();
+    if (!folder.empty() && folder != root_.parent_path())
+        for (const auto& e : fs::directory_iterator(folder, fs::directory_options::skip_permission_denied, ec))
+            if (e.is_directory(ec) && e.path() != root_.parent_path()) others.push_back(e.path() / root_.filename() / "launcher.json");
+    for (const fs::path& file : others) {
+        fs::path game = GameIn(file);
+        if (game.empty() || !fs::exists(game, ec)) continue;
+        if (elsewhere) *elsewhere = true;
+        return game;
+    }
+    return {};
 }
 
 bool Builder::SetGame(const GameCheck& copy, std::string& error) {
@@ -167,6 +199,10 @@ bool Builder::SetGame(const GameCheck& copy, std::string& error) {
     }
     Remember("game", U8(copy.path));
     Remember("game_sha1", copy.sha1);
+    if (fs::path user = UserFile(); !user.empty()) {  // for the next install, wherever it is unzipped
+        fs::create_directories(user.parent_path(), ec);
+        std::ofstream(user) << json{{"game", U8(copy.path)}}.dump(2);
+    }
     Log("game: " + U8(copy.path) + ", " + copy.release + ", sha1 " + copy.sha1);
     return true;
 }

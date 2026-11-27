@@ -531,6 +531,11 @@ void Graphics(Settings& s) {
 }
 
 void General(Settings& s) {
+    int volume = int(s.volume);
+    if (RowSlider("Master volume", &volume, 0, 100, 5, "%", "All of the game's sound; applies at once.")) {
+        s.volume = uint32_t(volume);
+        Save();
+    }
     if (RowCheck("Pause when the window is not in front", &s.pause_unfocused,
                  "The game and its sound stop while another window is in front, and carry on when you return."))
         Save();
@@ -1285,6 +1290,11 @@ void Controls(Settings& s) {
     }
     if (RowButton("Default controller")) {
         for (int c = 0; c < input::kControls; c++) s.pad_map[c] = uint8_t(c);
+        Save();
+    }
+    int dz = int(s.stick_deadzone);
+    if (RowSlider("Stick dead zone", &dz, 0, 50, 1, "%", "Each controller stick's travel around its centre that reads as at rest, for a stick that drifts; the rest of its travel still reaches full. On top of the game's own; 0 adds none. Applies at once.")) {
+        s.stick_deadzone = uint32_t(dz);
         Save();
     }
     if (kGame.mouse_look) {

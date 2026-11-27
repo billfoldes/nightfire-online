@@ -186,6 +186,7 @@ Settings& Get() {
 
 void Load() {
     Settings& s = Get();
+    s.volume = std::min(kGame.default_volume, 100u);
     toml::table t;
     try {
         t = toml::parse_file(File().string());
@@ -222,6 +223,8 @@ void Load() {
     s.mouse_look = t["mouse_look"].value_or(s.mouse_look);
     s.mouse_sensitivity = std::clamp<uint32_t>(t["mouse_sensitivity"].value_or(s.mouse_sensitivity), 10, 1000);
     s.mouse_invert_y = t["mouse_invert_y"].value_or(s.mouse_invert_y);
+    s.stick_deadzone = std::min<uint32_t>(t["stick_deadzone"].value_or(s.stick_deadzone), 50);
+    s.volume = std::min<uint32_t>(t["volume"].value_or(s.volume), 100);
     s.monitor = t["monitor"].value_or(s.monitor);
     s.pause_unfocused = t["pause_unfocused"].value_or(s.pause_unfocused);
     s.show_fps = t["show_fps"].value_or(s.show_fps);
@@ -376,6 +379,8 @@ toml::table Table() {
         t.insert("mouse_sensitivity", int64_t(s.mouse_sensitivity));
         t.insert("mouse_invert_y", s.mouse_invert_y);
     }
+    t.insert("stick_deadzone", int64_t(s.stick_deadzone));
+    t.insert("volume", int64_t(s.volume));
     if (!pad.empty()) t.insert("gamepad", pad);
     for (const Option& o : kGame.options) {
         if (o.flag) t.insert(o.key, *o.flag);

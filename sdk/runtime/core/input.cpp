@@ -162,6 +162,15 @@ bool ReadPort(int port, float* v) {
         }
         v[c] = rest < 0.99f ? std::max(v[c] - rest, 0.0f) / (1 - rest) : 0.0f;
     }
+    // Settings::stick_deadzone, round each stick's centre (a square one would snap diagonals to the axes)
+    if (float dz = std::min(app::Get().stick_deadzone, 50u) / 100.0f; dz > 0)
+        for (int neg : {kLSLeft, kRSLeft}) {  // left, right, up, down in a row
+            float x = v[neg + 1] - v[neg], y = v[neg + 2] - v[neg + 3], m = std::sqrt(x * x + y * y);
+            float k = m > dz ? std::min(1.0f, (m - dz) / (1 - dz)) / m : 0.0f;
+            x *= k, y *= k;
+            v[neg] = std::max(-x, 0.0f), v[neg + 1] = std::max(x, 0.0f);
+            v[neg + 2] = std::max(y, 0.0f), v[neg + 3] = std::max(-y, 0.0f);
+        }
     return true;
 }
 
