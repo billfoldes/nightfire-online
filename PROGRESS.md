@@ -166,6 +166,12 @@ Newest first. Each entry: date, what changed, what was learned, what's next.
   match clock in it (0xA25F0, [0x2637D8] at 480, 360); in each player's full-screen view that quarter sat over
   everyone's picture. With full-screen view the panel is not made and the clock is at the top (320, 56), as one
   player's. Headless, 3 machines in a match: gone, the clock at the top.
+- **John's capture the flag "crash" (v2.0.7, 3 players, 7 bots) was the host's game thread stopping**: its log ends
+  at 564.5 s on a bot respawn the other two logged at the same moment, then they wait for its tick 33727 until it
+  closes at 582 s; no exception, no dump. The game's own code runs the same on all three, so a loop in it would have
+  stopped them all: it is something the host alone ran (renderer, sound, the net host). SDK: no frame for 20 s
+  (not paused) now logs every guest thread's registers and return addresses, whether it waits in the kernel, the
+  kernel's objects, and writes a dump to CrashDumps. Next time the log says where.
 - **Bots 7 and 8 are on one team everywhere** (John: in capture the flag one of the red team showed on the blue side
   just before the match): the Start page listed them by Bot 1's or 2's menu entry's team, and SpawnLowBots chose
   their spawn point by it too, while the spawn (BotEntry, BotsEntry) gives a bot whose character the host's
