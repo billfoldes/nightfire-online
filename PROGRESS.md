@@ -130,6 +130,15 @@ Newest first. Each entry: date, what changed, what was learned, what's next.
   every machine already steps every player's aim (src/driving/coop.cpp g_aim), so nf::Reticles now hands the
   interface each shown player's, this machine's own as before and the others' (not player 1's, the game's crosshair)
   smaller and fainter in their colour.
+- **Host co-op settings travel like the bot settings** (net.cpp, kVersion 39): kHostSettings values after the 24 bot
+  settings in the host bundle's rotation (host_bot_at, 26 of its 32), and in kStart (kStartHost), in the snapshot.
+- **The mission fails when** (net_coop_fail): the last player down (as before), player 1 down, or anyone down; a
+  death that fails it is not respawned and its fail screen request ([0x1DF19A]) stands. Tested with NF_COOP_KILL
+  in The Exchange, each mode, both machines: player 2 respawned / player 1's death failed it / player 2's failed it.
+- **Pickups** (net_coop_pickups): Shared (as before) or Separate: a one-off weapon, ammo or armor pickup with no
+  mission flag stays until every player still playing has taken it once (0xA7710's gone mark undone, the takers out
+  of 0x1F6654 for its update 0xA84D0); still drawn for those who took it. NF_PICKUP_TEST: player 1 took an ammo
+  and an armor pickup and they stayed, player 2 then took them and they went, the same on both machines.
 
 ### 2026-11-25 - Through the relay, straight when it can; UPnP for hosts by IP address (v2.0.7)
 - **Direct connections through the relay** (net_direct, on by default, every player's own): the relay gives a host

@@ -61,6 +61,15 @@ extern bool coop_more_enemies;                 // net_coop_more_enemies: an enem
 extern bool coop_tougher_enemies;              // net_coop_tougher_enemies: enemies' health with the players, the host's
 bool CoopMoreEnemies();                       // the host's as of the tick the game has now, as CoopFriendlyFire
 bool CoopTougherEnemies();
+// the host's co-op choices after the bot settings in its bundles' rotation (kStart carries them too), every
+// machine's at the same tick: kHostCoopFail (net_coop_fail), kHostCoopPickups (net_coop_pickups)
+constexpr int kHostCoopFail = 0, kHostCoopPickups = 1, kHostSettings = 2;
+constexpr uint32_t kCoopFailLast = 0, kCoopFailPlayer1 = 1, kCoopFailAnyone = 2, kCoopFailChoices = 3;
+constexpr uint32_t kCoopPickupsShared = 0, kCoopPickupsSeparate = 1, kCoopPickupsChoices = 2;
+extern uint32_t host_setting[kHostSettings];  // this PC's (a host's are the session's)
+const char* CoopFailChoiceName(uint32_t choice);
+const char* CoopPickupsChoiceName(uint32_t choice);
+uint32_t HostSetting(int setting);  // the session's as of the tick the game has now; this PC's with no session
 extern bool quit_together;                     // net_quit_together: the host's QUIT takes everyone to the menus
 bool QuitTogether();                          // the host's as of the tick the game has now, as CoopFriendlyFire
 bool UnlocksMissions();  // unlock_missions as the session has it: the host's (kStart), else this machine's
@@ -101,7 +110,7 @@ const char* BotFieldChoiceName(int field, uint32_t choice);
 void SetBotSettings(const char* list);  // "setting=value,...", NF_NET_BOT
 int BotSetting(int setting);            // the session's as of the tick the game has now; 0 (Default) with no session
 uint32_t BotChanges();                  // how often the session's changed (the same on every machine)
-bool BotSettingsWhole();                // a round of kBotSettings ticks since the last change: all the host's came
+bool BotSettingsWhole();                // a round of the rotation's ticks since the last change: all the host's came
 uint32_t BotSeed();                     // the session's seed for their Random
 uint32_t& BotMenuChanges();             // src/game/bots.cpp's, in the snapshot: the BotChanges the bot menu has,
 uint32_t& BotRound();                   // and the rounds of Random picks

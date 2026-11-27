@@ -76,6 +76,7 @@ X86_EXTERN_FUNC(__imp__sub_000CB580);
 X86_EXTERN_FUNC(__imp__sub_000CBDF0);
 X86_EXTERN_FUNC(__imp__sub_000CC1C0);
 X86_EXTERN_FUNC(__imp__sub_000A84D0);
+X86_EXTERN_FUNC(__imp__sub_000A7710);
 X86_EXTERN_FUNC(__imp__sub_000A2990);
 X86_EXTERN_FUNC(__imp__sub_0009D3D0);
 X86_FUNC(sub_0001B170);
@@ -1478,11 +1479,29 @@ X86_FUNC(sub_000AD520) {
         if (IsCoopCampaign()) ApplyPlayerHands(ctx, base, outer, s);
     }
     // a co-op player down (dying, [outer+0xD0] 2, or 3) while a teammate is alive is respawned beside them 180
-    // frames on, counted while their own pause is closed (a death under it waits for it)
+    // frames on, counted while their own pause is closed (a death under it waits for it). The host's net_coop_fail
+    // says whose death ends the mission instead: the last player's (that respawn), player 1's, or anyone's
     bool coop_down = false;
     if (IsCoopCampaign() && s >= 0 && s < 4) {
         int16_t state = ValidPtr(outer, 0xE0) ? kernel::G<int16_t>(outer + 0xD0) : 0;
-        coop_down = (state == 2 || state == 3) && TeammateAlive(s);
+        // NF_COOP_KILL=player,updates (the harness): that player's health runs out at their update that many on
+        static const int kill[2] = {[] { const char* e = std::getenv("NF_COOP_KILL"); return e ? std::atoi(e) - 1 : -1; }(),
+                                    [] { const char* e = std::getenv("NF_COOP_KILL"); const char* c = e ? std::strchr(e, ',') : nullptr; return c ? std::atoi(c + 1) : 0; }()};
+        static int updates = 0;
+        if (s == kill[0] && ++updates == kill[1] && state == 1 && ValidPtr(R32(outer + 0xBC), 0x8E0)) {
+            LOGR("nightfire: co-op player %d's health runs out (NF_COOP_KILL)", s + 1);
+            SetF(R32(outer + 0xBC) + 0x824, 0.0f);
+        }
+        uint32_t fail = net::HostSetting(net::kHostCoopFail);
+        bool fails = fail == net::kCoopFailAnyone || (fail == net::kCoopFailPlayer1 && s == 0 && !CoopGone(0));
+        coop_down = (state == 2 || state == 3) && TeammateAlive(s) && !fails;
+        static bool said[4] = {};
+        if (state == 1) said[s] = false;
+        else if ((state == 2 || state == 3) && fails && TeammateAlive(s) && !said[s]) {
+            said[s] = true;
+            LOGR("nightfire: co-op player %d is down: the mission fails (net_coop_fail: %s)", s + 1,
+                 net::CoopFailChoiceName(fail));
+        }
         if (state == 1 && ValidPtr(R32(outer + 0xBC), 0x8E0)) {
             KeepHud(R32(outer + 0xBC), s);
             KeepWeapon(outer, s);
@@ -1499,6 +1518,11 @@ X86_FUNC(sub_000AD520) {
     // the end of a death (0xAC690: its animation done, or button 0x19 on any controller, a teammate's CONTINUE too)
     // asks for the mission failed screen ([0x1DF19A]); in co-op only the last player down does
     if (coop_down) kernel::G<uint8_t>(kMissionFailed) = 0;
+    static bool said_failed = false;
+    if (IsCoopCampaign() && kernel::G<uint8_t>(kMissionFailed) != said_failed) {
+        said_failed = kernel::G<uint8_t>(kMissionFailed) != 0;
+        if (said_failed) LOGR("nightfire: co-op: the mission failed screen is asked for (player %d's update)", s + 1);
+    }
     if (s < 0 || s >= 4) return;
     bool gone = CoopGone(s);
     if (gone) CarryGone(ctx, base, outer, s);
@@ -1655,8 +1679,89 @@ X86_FUNC(sub_00043070) {
     W32(0x26001C, was);
 }
 
+// The host's net_coop_pickups Separate: in campaign co-op a weapon, its ammo or armor ([data+0x1A] 0, 1 or 3) that
+// goes once it is taken ([data+0x24] 0) and sets no mission flag ([data+0x20] 0) stays until every player still
+// playing has taken it once: 0xA7710 gives it (0xA84D0, the pickup's update, offers it to the first of 0x1F6654's
+// players near it in sight) and marks it gone ([pickup+0xDA] bit 0) once given; the mark is undone while some have
+// not, and those who have are out of 0x1F6654 for its update
+struct Taken {
+    uint32_t pickup;
+    uint8_t by;  // the players who took it, a bit each
+};
+constexpr int kTakenMax = 256;
+Taken g_taken[kTakenMax];
+int g_taken_n = 0;
+
+bool SeparatePickups() {
+    return IsCoopCampaign() && net::HostSetting(net::kHostCoopPickups) == net::kCoopPickupsSeparate;
+}
+Taken* TakenFor(uint32_t pickup) {
+    for (int i = 0; i < g_taken_n; i++)
+        if (g_taken[i].pickup == pickup) return &g_taken[i];
+    return nullptr;
+}
+bool EachOwn(uint32_t pickup) {
+    uint32_t data = R32(pickup + 0xBC);
+    if (!ValidPtr(data, 0x30)) return false;
+    uint16_t kind = kernel::G<uint16_t>(data + 0x1A);
+    return (kind == 0 || kind == 1 || kind == 3) && kernel::G<uint16_t>(data + 0x24) == 0 &&
+           kernel::G<uint16_t>(data + 0x20) == 0;
+}
+
+namespace nf {
+void NewLevelPickups() { g_taken_n = 0; }  // the level's start (src/game/enemies.cpp): its pickups are new
+}
+
+X86_FUNC(sub_000A7710) {  // (pickup, player) the pickup given, edi its data
+    uint32_t pickup = R32(ctx.esp + 4), player = R32(ctx.esp + 8);
+    bool own = SeparatePickups() && ValidPtr(pickup, 0xE0) && EachOwn(pickup);
+    int s = own ? TruePlayerFromOuter(player) : -1;
+    uint8_t was = own ? kernel::G<uint8_t>(pickup + 0xDA) : 0;
+    __imp__sub_000A7710(ctx, base);
+    if (s < 0 || s >= 4 || (was & 1) || !(kernel::G<uint8_t>(pickup + 0xDA) & 1)) return;
+    Taken* t = TakenFor(pickup);
+    if (!t && g_taken_n < kTakenMax) t = &g_taken[g_taken_n++], *t = {pickup, 0};
+    if (!t) return;
+    t->by |= uint8_t(1u << s);
+    uint8_t everyone = 0;
+    for (int i = 0; i < CoopPlayers(); i++)
+        if (!CoopGone(i)) everyone |= uint8_t(1u << i);
+    if ((t->by & everyone) != everyone) kernel::G<uint8_t>(pickup + 0xDA) &= uint8_t(~1u);
+    static int said = 0;
+    if (said < 8) {
+        said++;
+        LOGR("nightfire: co-op player %d took a pickup (kind %u): %s", s + 1, kernel::G<uint16_t>(R32(pickup + 0xBC) + 0x1A),
+             (t->by & everyone) == everyone ? "everyone has, it goes" : "it stays for the others (net_coop_pickups)");
+    }
+}
+
 // weapon/ammo/armor pickup update (cdecl: pickup_obj)
 X86_FUNC(sub_000A84D0) {
+    if (SeparatePickups()) {
+        uint32_t pickup = R32(ctx.esp + 4);
+        const Taken* t = TakenFor(pickup);
+        uint32_t hidden[4] = {};
+        for (int s = 0; t && s < 4; s++)
+            if (t->by & (1u << s)) hidden[s] = R32(kOuterActors + uint32_t(s) * 4), W32(kOuterActors + uint32_t(s) * 4, 0);
+        // NF_PICKUP_TEST=1 (the harness): the players stand on each such pickup for its update
+        static const bool test = std::getenv("NF_PICKUP_TEST") != nullptr;
+        uint32_t kept[4][6] = {};
+        if (test && EachOwn(pickup))
+            for (int s = 0; s < 4; s++)
+                if (uint32_t a = R32(kOuterActors + uint32_t(s) * 4); ValidPtr(a, 0xE0))
+                    for (uint32_t k = 0; k < 3; k++) {
+                        kept[s][k] = R32(a + 0x24 + 4 * k), kept[s][3 + k] = R32(a + 0x60 + 4 * k);
+                        W32(a + 0x24 + 4 * k, R32(pickup + 0x60 + 4 * k)), W32(a + 0x60 + 4 * k, R32(pickup + 0x60 + 4 * k));
+                    }
+        __imp__sub_000A84D0(ctx, base);
+        if (test && EachOwn(pickup))
+            for (int s = 0; s < 4; s++)
+                if (uint32_t a = R32(kOuterActors + uint32_t(s) * 4); ValidPtr(a, 0xE0) && kept[s][0])
+                    for (uint32_t k = 0; k < 3; k++) W32(a + 0x24 + 4 * k, kept[s][k]), W32(a + 0x60 + 4 * k, kept[s][3 + k]);
+        for (int s = 0; s < 4; s++)
+            if (hidden[s] && !R32(kOuterActors + uint32_t(s) * 4)) W32(kOuterActors + uint32_t(s) * 4, hidden[s]);
+        return;
+    }
     if (!net::Active() || net::Players() <= 4) {
         __imp__sub_000A84D0(ctx, base);
         return;
@@ -2189,14 +2294,14 @@ void SaveViewState(snapshot::Writer& w) {
     w.Pod(g_coop_spawn_rot), w.Pod(g_coop_frames), w.Pod(g_coop_default_model), w.Pod(g_applied_char);
     w.Pod(g_mission_hands), w.Pod(g_mission_skin), w.Pod(g_death_held), w.Pod(g_down_ticks), w.Pod(g_was_gone);
     w.Pod(g_overlapping);
-    w.Pod(g_door_level), w.Pod(g_door_hints), w.Pod(g_watch_hands), w.Pod(g_low_bots);
+    w.Pod(g_door_level), w.Pod(g_door_hints), w.Pod(g_watch_hands), w.Pod(g_low_bots), w.Pod(g_taken), w.Pod(g_taken_n);
 }
 void LoadViewState(snapshot::Reader& r) {
     r.Pod(g_slot), r.Pod(g_active_slot), r.Pod(g_hud_shown), r.Pod(g_weapon_held), r.Pod(g_coop_spawn_pos);
     r.Pod(g_coop_spawn_rot), r.Pod(g_coop_frames), r.Pod(g_coop_default_model), r.Pod(g_applied_char);
     r.Pod(g_mission_hands), r.Pod(g_mission_skin), r.Pod(g_death_held), r.Pod(g_down_ticks), r.Pod(g_was_gone);
     r.Pod(g_overlapping);
-    r.Pod(g_door_level), r.Pod(g_door_hints), r.Pod(g_watch_hands), r.Pod(g_low_bots);
+    r.Pod(g_door_level), r.Pod(g_door_hints), r.Pod(g_watch_hands), r.Pod(g_low_bots), r.Pod(g_taken), r.Pod(g_taken_n);
 }
 }  // namespace nf
 

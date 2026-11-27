@@ -66,6 +66,7 @@ bool coop_friendly_fire = true;
 bool coop_more_enemies = true;
 bool coop_tougher_enemies = true;
 bool quit_together = true;
+uint32_t host_setting[kHostSettings] = {};
 std::string master_url;
 uint32_t who = kWhoNotListed;
 std::string relay_server;
@@ -86,7 +87,7 @@ int64_t NowMs() {
 }
 
 constexpr uint32_t kMagic = 0x4E464E31;  // "NFN1"
-constexpr uint16_t kVersion = 37;  // 1 (and 2, its Driving.xbe) sent one tick a bundle; 3 (4) no name or handicap;
+constexpr uint16_t kVersion = 39;  // 1 (and 2, its Driving.xbe) sent one tick a bundle; 3 (4) no name or handicap;
                                    // 5 (6) no co-op friendly fire; 7 (8) no rejoining; 9 (10) no host's saves;
                                    // 11 (12) the on-foot sound by the mixer; 13 (14) a driving load's clock counted,
                                    // the car's copied shots paid from player 1's weapon; 15 (16) a seat no one took
@@ -97,7 +98,8 @@ constexpr uint16_t kVersion = 37;  // 1 (and 2, its Driving.xbe) sent one tick a
                                    // the teammate, character changes mid-level; 29 (30) no character change
                                    // mid-level; 31 (32) no character loaded mid-level; 33 (34) the bot menu's
                                    // Playing ones not the session's bots; 35 (36) no direct connections through
-                                   // the relay, no UPnP
+                                   // the relay, no UPnP; 37 (38) the extra enemies beside their originals
+                                   // whatever is there, no host co-op settings (kHostSettings)
 constexpr uint8_t kHello = 1,   // a joiner asking to play, before boot
     kWelcome = 2,               // the host's answer: the controller it is given, the input delay
     kStart = 3,                 // the host: boot, with the session's player count in the sequence
@@ -183,6 +185,11 @@ constexpr size_t kStartFull = kStartSize + 1;  // then the host's flags: 1 its u
 constexpr size_t kStartSaves = kStartFull + 4;  // then the id of the host's saves (kSaves)
 constexpr size_t kStartBots = kStartSaves + 1 + kBotSettings + 4;  // then the host's net_bots, its bot settings,
                                                                     // the session's seed for their Random
+constexpr size_t kStartHost = kStartBots + kHostSettings;  // then the host's co-op settings (host_setting)
+// a host's bundle carries one of its bot settings, then its co-op settings, a tick each in turn (host_bot_at)
+constexpr int kRotation = kBotSettings + kHostSettings;
+static_assert(kRotation <= 32, "host_bot_at has 5 bits");
+uint32_t HostChoices(int setting) { return setting == kHostCoopFail ? kCoopFailChoices : kCoopPickupsChoices; }
 constexpr size_t kHelloHandicap = kHeader + kNameLen + 1;
 constexpr size_t kHelloSize = kHelloHandicap + 4;  // then the id of the host's saves this machine has whole, 0 none
 // then the password the joiner was given for the host's game: printable ASCII, zero padded. A host whose net_who is
@@ -362,6 +369,7 @@ struct Session {
     bool unlocks_mp = false;  // the host's unlock_multiplayer, the same for multiplayer's lists
     uint8_t bots = 0;      // the host's net_bots: 0 the bot menu's count, else 1 + the count
     uint8_t bot[kBotSettings] = {};  // the host's bot settings as of the tick the game has now
+    uint8_t host_setting[kHostSettings] = {};  // the host's co-op settings, the same way
     uint32_t bot_changes = 0;        // how often they changed in the session (kStart's is the first)
     uint32_t bot_changed_at = 0;     // the tick of the last change
     uint32_t bot_seed = 0;           // the host's, for their Random (kStart)
@@ -586,6 +594,7 @@ size_t PackStart(uint8_t* b) {
     b[n++] = g.bots;
     std::memcpy(b + n, g.bot, kBotSettings), n += kBotSettings;
     std::memcpy(b + n, &g.bot_seed, 4), n += 4;
+    std::memcpy(b + n, g.host_setting, kHostSettings), n += kHostSettings;
     return n;
 }
 
@@ -2110,7 +2119,7 @@ void Receive() {
             std::memcpy(w + kHeader, &give, 4), std::memcpy(w + kHeader + 4, &d, 4);
             Send(from, w, kHeader + 8);
             if (g_booting.load()) {  // a registered joiner missed kStart: re-send it
-                uint8_t start_packet[kStartBots];
+                uint8_t start_packet[kStartHost];
                 std::lock_guard lock(g.m);
                 Send(from, start_packet, PackStart(start_packet));
             } else if (!known) {
@@ -2163,6 +2172,8 @@ void Receive() {
             for (int i = 0; i < kBotSettings; i++)
                 g.bot[i] = size_t(n) >= kStartBots ? uint8_t(std::min(buf[kStartSaves + 1 + i] + 0u, BotChoices(i) - 1)) : 0;
             if (size_t(n) >= kStartBots) std::memcpy(&g.bot_seed, buf + kStartSaves + 1 + kBotSettings, 4);
+            for (int i = 0; i < kHostSettings; i++)
+                g.host_setting[i] = size_t(n) >= kStartHost ? uint8_t(std::min(buf[kStartBots + i] + 0u, HostChoices(i) - 1)) : 0;
             g.bot_changes = 1;
             if (size_t(n) >= kStartSaves) {
                 std::lock_guard l(g_saves.m);
@@ -2725,10 +2736,11 @@ void Meet(const std::string& join_address, uint32_t lan_ip, void* window_handle)
         {
             std::lock_guard<std::recursive_mutex> ui(app::UiLock());
             for (int i = 0; i < kBotSettings; i++) g.bot[i] = uint8_t(std::min(bot_setting[i], BotChoices(i) - 1));
+            for (int i = 0; i < kHostSettings; i++) g.host_setting[i] = uint8_t(std::min(host_setting[i], HostChoices(i) - 1));
         }
         g.bot_seed = uint32_t(std::random_device{}());
         g.bot_changes = 1;
-        uint8_t start_packet[kStartBots];
+        uint8_t start_packet[kStartHost];
         size_t start_n = PackStart(start_packet);
         for (int pass = 0; pass < 2; pass++)
             for (int p = 1; p < kMaxPlayers; p++)
@@ -2846,6 +2858,10 @@ void Init(void* hwnd) {
     if (const char* e = std::getenv("NF_NET_COOP_FRIENDLY_FIRE"); e && *e) coop_friendly_fire = *e == '1';
     if (const char* e = std::getenv("NF_NET_COOP_MORE_ENEMIES"); e && *e) coop_more_enemies = *e == '1';
     if (const char* e = std::getenv("NF_NET_COOP_TOUGHER_ENEMIES"); e && *e) coop_tougher_enemies = *e == '1';
+    if (const char* e = std::getenv("NF_NET_COOP_FAIL"); e && *e)
+        host_setting[kHostCoopFail] = std::min<uint32_t>(uint32_t(std::atoi(e)), kCoopFailChoices - 1);
+    if (const char* e = std::getenv("NF_NET_COOP_PICKUPS"); e && *e)
+        host_setting[kHostCoopPickups] = std::min<uint32_t>(uint32_t(std::atoi(e)), kCoopPickupsChoices - 1);
     if (const char* e = std::getenv("NF_NET_QUIT_TOGETHER"); e && *e) quit_together = *e == '1';
     if (const char* e = std::getenv("NF_NET_HANDICAP"); e && *e)  // net_handicap: 0 the join screen's, 1..8
         my_handicap = std::min<uint32_t>(uint32_t(std::max(0, std::atoi(e))), kHandicapChoices - 1);
@@ -3319,10 +3335,11 @@ void Pad(int port, input::Pad& p) {
         b.zoom = int16_t(std::clamp<int>(g.zoom.exchange(0), -8, 8));
         b.my_char = uint8_t(std::min<uint32_t>(my_character, kCharacterChoices - 1));
         if (host) {
-            int at = int(g.mine % uint32_t(kBotSettings));
+            int at = int(g.mine % uint32_t(kRotation));
             b.host_bot_at = uint8_t(at);
             std::lock_guard<std::recursive_mutex> ui(app::UiLock());
-            b.host_bot = uint8_t(std::min(bot_setting[at], BotChoices(at) - 1));
+            b.host_bot = at < kBotSettings ? uint8_t(std::min(bot_setting[at], BotChoices(at) - 1))
+                                           : uint8_t(std::min(host_setting[at - kBotSettings], HostChoices(at - kBotSettings) - 1));
         }
         b.handicap = uint8_t(std::min<uint32_t>(my_handicap, kHandicapChoices - 1));
         b.friendly_fire = coop_friendly_fire;
@@ -3414,6 +3431,12 @@ void Pad(int port, input::Pad& p) {
                         g.bot[it->second.host_bot_at] = it->second.host_bot;
                         g.bot_changes++;
                         g.bot_changed_at = want;
+                    }
+                    if (int at = it->second.host_bot_at - kBotSettings;
+                        pl == 0 && at >= 0 && at < kHostSettings && g.host_setting[at] != it->second.host_bot) {
+                        LOGR("net: tick %u: the host's %s is %s", want, at == kHostCoopFail ? "net_coop_fail" : "net_coop_pickups",
+                             at == kHostCoopFail ? CoopFailChoiceName(it->second.host_bot) : CoopPickupsChoiceName(it->second.host_bot));
+                        g.host_setting[at] = uint8_t(std::min(it->second.host_bot + 0u, HostChoices(at) - 1));
                     }
                     s.next = want + 1;
                     if (want >= kKeep) s.known.erase(s.known.begin(), s.known.lower_bound(want - kKeep));
@@ -3689,7 +3712,7 @@ void SaveState(snapshot::Writer& w) {
     w.Pod(g.peer_char), w.Pod(g.peer_name), w.Pod(g.peer_handicap), w.Pod(g.next_name);
     w.Pod(g.friendly_fire), w.Pod(g.left_at), w.Pod(g.back_at), w.Pod(g.host_gone), w.Pod(g.unlocks), w.Pod(g.unlocks_mp);
     w.Pod(g.more_enemies), w.Pod(g.tougher_enemies), w.Pod(g.bots), w.Pod(g.bot_blocks), w.Pod(g.quit_together);
-    w.Pod(g.bot), w.Pod(g.bot_changes), w.Pod(g.bot_changed_at), w.Pod(g.bot_seed), w.Pod(g.bot_menu), w.Pod(g.bot_round);
+    w.Pod(g.bot), w.Pod(g.bot_changes), w.Pod(g.bot_changed_at), w.Pod(g.bot_seed), w.Pod(g.bot_menu), w.Pod(g.bot_round), w.Pod(g.host_setting);
     for (const Stream& st : g.stream) w.U32(st.next), w.Map(st.known);
 }
 
@@ -3699,7 +3722,7 @@ void LoadState(snapshot::Reader& r) {
     r.Pod(g.peer_char), r.Pod(g.peer_name), r.Pod(g.peer_handicap), r.Pod(g.next_name);
     r.Pod(g.friendly_fire), r.Pod(g.left_at), r.Pod(g.back_at), r.Pod(g.host_gone), r.Pod(g.unlocks), r.Pod(g.unlocks_mp);
     r.Pod(g.more_enemies), r.Pod(g.tougher_enemies), r.Pod(g.bots), r.Pod(g.bot_blocks), r.Pod(g.quit_together);
-    r.Pod(g.bot), r.Pod(g.bot_changes), r.Pod(g.bot_changed_at), r.Pod(g.bot_seed), r.Pod(g.bot_menu), r.Pod(g.bot_round);
+    r.Pod(g.bot), r.Pod(g.bot_changes), r.Pod(g.bot_changed_at), r.Pod(g.bot_seed), r.Pod(g.bot_menu), r.Pod(g.bot_round), r.Pod(g.host_setting);
     for (Stream& st : g.stream) st.next = r.U32(), r.Map(st.known);
     for (auto& h : g.heard) h.store(NowMs());
     g.zoom.store(0);
@@ -3835,7 +3858,25 @@ uint32_t BotChanges() {
 
 bool BotSettingsWhole() {
     std::lock_guard lock(g.m);
-    return g.bot_changes <= 1 || g.tick_now < 0 || uint32_t(g.tick_now) - g.bot_changed_at >= uint32_t(kBotSettings);
+    return g.bot_changes <= 1 || g.tick_now < 0 || uint32_t(g.tick_now) - g.bot_changed_at >= uint32_t(kRotation);
+}
+
+uint32_t HostSetting(int setting) {
+    if (setting < 0 || setting >= kHostSettings) return 0;
+    std::lock_guard lock(g.m);
+    if (g.active) return g.host_setting[setting];
+    std::lock_guard<std::recursive_mutex> ui(app::UiLock());
+    return std::min(host_setting[setting], HostChoices(setting) - 1);
+}
+
+const char* CoopFailChoiceName(uint32_t choice) {
+    static const char* const kNames[kCoopFailChoices] = {"The last player down", "Player 1 down", "Anyone down"};
+    return choice < kCoopFailChoices ? kNames[choice] : "";
+}
+
+const char* CoopPickupsChoiceName(uint32_t choice) {
+    static const char* const kNames[kCoopPickupsChoices] = {"Shared", "Separate"};
+    return choice < kCoopPickupsChoices ? kNames[choice] : "";
 }
 
 uint32_t BotSeed() {

@@ -33,6 +33,7 @@ bool MenuUp();
 bool OwnPause(int player);
 int CoopCampaignPlayers();  // default.xbe: a co-op campaign session's players (src/game/view.cpp), else 0
 void ReportHeap();          // default.xbe: a level's start, the game's heap free (src/game/heap.cpp)
+void NewLevelPickups();     // default.xbe: a level's start, no co-op pickups taken yet (src/game/view.cpp)
 void DoorHintFetched();
 // default.xbe's bots in an online match as the host's bot settings have them (src/game/bots.cpp)
 void BotsFrame(X86Context& ctx);                       // each frame: the host's changes in, its menu edits out

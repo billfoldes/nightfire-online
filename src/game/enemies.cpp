@@ -177,6 +177,7 @@ X86_FUNC(sub_0002FCF0) {
 // the level's start (the placed characters set up): the placed enemies' copies, set up as a spawner's are
 X86_FUNC(sub_00031FD0) {
     __imp__sub_00031FD0(ctx, base);
+    nf::NewLevelPickups();
     std::vector<PlacedOne> placed;
     placed.swap(g_placed);
     int extra = Copies(), made = 0;
