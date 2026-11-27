@@ -116,6 +116,16 @@ Newest first. Each entry: date, what changed, what was learned, what's next.
 
 ## Log
 
+### 2026-11-27 - The scope's glow points take their colours from this frame's picture
+- **The real cause of the scope's misplaced layer** (SDK d3d12.cpp and d3d11.cpp SyncVertexTargets; John, v2.0.11:
+  no change): zoomed, Driving.xbe draws 16384 points (draw 376, into 0160B000) whose second vertex stream is the
+  128x128 copy of the screen's own memory (data 0161B000, stride 4: a colour a point; headless probe of the draw's
+  streams). Their picture is added over the whole screen (draw 384). The console's GPU and the reference renderer draw
+  into that memory; the Windows renderers draw into a texture and left the memory as it last was, so the points showed
+  an old picture over the scene. There is no NOOVERWRITE lock of it at all (the same probe), so the two entries below
+  did not touch it. Now a draw whose stream is a drawn target's memory reads the target back first (once a frame while
+  zoomed; "target ... read as vertices" in the log). Built for Windows; John to look.
+
 ### 2026-11-27 - Online play shows the screen's frame rate, the game still at 60
 - **Smooth online frames** (F1 `smooth_online`, on by default; nf::SmoothOnline as GameInfo::step_interpolation,
   the SDK's gpu/interp.cpp): a session keeps every machine's game at 60 steps a second (lockstep), and with the frame
