@@ -116,6 +116,19 @@ Newest first. Each entry: date, what changed, what was learned, what's next.
 
 ## Log
 
+### 2026-11-27 - The scope's blur is the frame's own, not an older one laid over it
+- **The scope's blurred surround no longer lags the view** (SDK d3d12.cpp and d3d11.cpp CpuWrote; John, v2.0.10 on
+  Windows: the blur still looked like a layer over the scene, a building at another angle than the sharp one; the
+  render scale made no difference, so the entry below was not the cause). Zoomed, Driving.xbe locks the 128x128
+  copy of the screen (8161B000) with D3DLOCK_NOOVERWRITE each frame; DeliverLate puts the newest finished copy (a
+  frame or two old) in guest memory at once, on the title's thread, while the render thread still has the frame
+  before to draw. That frame's blur passes then sampled 8161B000, found memory unlike its signature (RecordLate
+  updates it, but later, in order with the draws) and uploaded the older picture over the fresh one ("d3d12: CPU
+  pixels drawn over target 8161B000" in John's log): the blur came from where the view had been. A delivery now
+  keeps the signature of what it wrote, and memory that still matches it is no CPU write. The headless reference
+  has no render thread, so it never showed. Built for Windows; John to look.
+- The entry below (small targets at the console's size) stays: it does make the blur the console's softness.
+
 ### 2026-11-27 - The sniper scope's surround blurred as on the console
 - **The scope's surround is soft again at high resolutions** (SDK GameInfo::native_target_max, d3d_common.cpp
   TargetScale; NightFire's 256; John's console and PC pictures of the Paris van tutorial: the PC's was nearly sharp
