@@ -139,6 +139,14 @@ Newest first. Each entry: date, what changed, what was learned, what's next.
   mission flag stays until every player still playing has taken it once (0xA7710's gone mark undone, the takers out
   of 0x1F6654 for its update 0xA84D0); still drawn for those who took it. NF_PICKUP_TEST: player 1 took an ammo
   and an armor pickup and they stayed, player 2 then took them and they went, the same on both machines.
+- **Master volume** (F1 General, SDK Settings::volume, squared as a level; GameInfo::default_volume, NightFire's 50)
+  and a **stick dead zone** (F1 Controls, SDK Settings::stick_deadzone, round, on top of the game's own).
+- **The launcher remembers the game across installs**: SetGame also writes %LOCALAPPDATA%\NightFireOnline\
+  launcher.json; a launcher with no choice of its own takes that one, else an install's beside its folder, and links
+  it in its first job. launcher_cli saved: found from the user file, then from a sibling install alone.
+- **Unlock every reward** (unlock_rewards, the host's as the session starts, kStart flag 4): 0xB1740, which decodes
+  the medals' rewards from the codename's 64 bits at 0x25D6E8 (the bits the cheat codes PASSPORT, Q LAB ... set),
+  reads all 64 set; the save keeps what was earned. The hook fires as the codename loads.
 
 ### 2026-11-25 - Through the relay, straight when it can; UPnP for hosts by IP address (v2.0.7)
 - **Direct connections through the relay** (net_direct, on by default, every player's own): the relay gives a host

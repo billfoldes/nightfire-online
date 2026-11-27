@@ -181,6 +181,22 @@ X86_FUNC(sub_00031FD0) {
     std::vector<PlacedOne> placed;
     placed.swap(g_placed);
     int extra = Copies(), made = 0;
+    if (extra) {
+        int teams[4] = {}, other = 0;
+        for (const PlacedOne& p : placed) {
+            uint32_t in = R32(p.obj + 0xBC);
+            if (in && kernel::G<uint8_t>(p.obj + 0xDB) == 0x02 && kernel::G<uint8_t>(in + 0x44) < 4) teams[kernel::G<uint8_t>(in + 0x44)]++;
+            else {
+                other++;
+                uint32_t b8 = R32(p.obj + 0xB8), look = b8 ? R32(b8 + 0x74) : 0;
+                LOGR("co-op: placed character %08X type %02X state %08X team %u health %.1f model %08X", p.obj,
+                     kernel::G<uint8_t>(p.obj + 0xDB), in, in ? kernel::G<uint8_t>(in + 0x44) : 0xFFu,
+                     in ? GetF(in + 0x90) : -1.0f, look ? R32(look) : 0);
+            }
+        }
+        LOGR("co-op: the level placed %zu characters: teams 0-3 %d %d %d %d, %d not drones", placed.size(), teams[0],
+             teams[1], teams[2], teams[3], other);
+    }
     if (!extra) return nf::ReportHeap();
     Scratch s(ctx, 0x20 + kDataSize);
     g_skipped = 0;

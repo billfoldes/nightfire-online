@@ -257,6 +257,11 @@ X86_FUNC(sub_000B1740) {  // (bits*, mission, medal, ?, out*)
     uint32_t bits = kernel::R32(ctx.esp + 4);
     if (!nf::net::UnlocksRewards() || bits < kRewardBits || bits >= kRewardBits + 8 * kCodenames || (bits - kRewardBits) % 8)
         return __imp__sub_000B1740(ctx, base);
+    static bool said = false;
+    if (!said) {
+        said = true;
+        LOGR("nightfire: the medals' rewards read as all earned (unlock_rewards), codename %u", (bits - kRewardBits) / 8);
+    }
     uint32_t all = (ctx.esp - 0x100) & ~7u;
     kernel::W32(all, 0xFFFFFFFFu), kernel::W32(all + 4, 0xFFFFFFFFu);
     kernel::W32(ctx.esp + 4, all);
