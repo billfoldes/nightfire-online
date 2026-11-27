@@ -12,9 +12,11 @@
 #include <memory>
 #include <thread>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 #include "app/app.h"
+#include "core/diag.h"
 #include "core/log.h"
 #include "gpu/backend.h"
 #include "kernel/kernel.h"
@@ -39,6 +41,7 @@ constexpr float kFar = 0.25f, kLeap = 4.0f;                   // how far a matri
 constexpr uint32_t kFastest = 480;                            // frames a second for an unlimited cap
 constexpr uint32_t kHeaderBytes = 20;                         // a resource header: common, data, lock, format, size
 constexpr uint32_t kCopyBytes = 64u << 10;                    // a draw's vertices kept when no more than this
+constexpr uint32_t kSampleBytes = 256;                        // of a buffer's start, to tell it was rewritten
 constexpr uint32_t kRegionBytes = 8u << 20, kRegionHeaders = 1u << 16;  // kept vertices of a step, in guest memory, two steps' worth
 constexpr uint32_t kRegisters = 192, kMatrixRegisters = 4;    // the first are the title's transform in every program seen
 
@@ -156,6 +159,21 @@ private:
         return type < 0x20000 || type == 0x30000 ? 12 : kHeaderBytes;
     }
     void KeepVertices(Rec& r, const State& s, uint32_t start, uint32_t count, const uint8_t* indices);
+    // a title whose steps' vertices do not all fit (NightFire's levels, 18 MB) keeps only what the title rewrites within
+    // a step: memory drawn from once still has those vertices when the step presents. The renderer's own ring
+    // (DrawVerticesUP) is new each draw; another buffer is rewritten once its start changed between two draws of a step
+    bool Rewritten(uint32_t va, uint32_t bytes) {
+        if (va >= mem::kContiguousBase + mem::kPhysicalSize && va < mem::kContiguousBase + mem::kMappedPhysical) return true;
+        uint64_t sig = 0xCBF29CE484222325ull;
+        const auto* p = static_cast<const uint8_t*>(kernel::HostPtr(va));
+        for (uint32_t i = 0; i < std::min(bytes, kSampleBytes); i++) sig = (sig ^ p[i]) * 0x100000001B3ull;
+        auto [it, first] = used_.try_emplace(va, sig);
+        if (!first && it->second != sig) {
+            if (rewritten_.insert(va).second && diag::Perf()) LOG_FIRST(16, "gpu: in-between frames: %08X rewritten within a step", va);
+            it->second = sig;
+        }
+        return rewritten_.count(va) != 0;
+    }
     bool UploadKept();
     void LogJumps();
     Rec& Next(Rec::Kind kind) {
@@ -201,7 +219,11 @@ private:
     size_t count_ = 0, before_count_ = 0;
     std::vector<uint8_t> kept_bytes_;           // this step's kept vertices
     uint32_t kept_count_ = 0;
+    uint64_t wanted_bytes_ = 0;
     bool kept_full_ = false;
+    bool selective_ = false;                              // Rewritten decides, once a step's vertices did not fit
+    std::unordered_map<uint32_t, uint64_t> used_;         // this step's buffers, the start of each as last drawn
+    std::unordered_set<uint32_t> rewritten_;
     uint32_t region_ = 0, region_data_[2] = {}, region_headers_[2] = {}, region_fence_[2] = {};
     Clock::time_point presented_{}, first_{};
     double replay_seconds_ = 0, typical_ = 0, frame_seconds_ = 0;
@@ -211,6 +233,7 @@ private:
     bool logged_ = false;
     Clock::time_point reported_{};
     uint32_t shown_ = 0, steps_ = 0, blended_steps_ = 0;
+    size_t most_kept_ = 0;
 };
 
 void Interpolating::KeepVertices(Rec& r, const State& s, uint32_t start, uint32_t count, const uint8_t* indices) {
@@ -233,6 +256,8 @@ void Interpolating::KeepVertices(Rec& r, const State& s, uint32_t start, uint32_
         if (!data) continue;
         const uint32_t va = mem::VirtualFromPhysical(data);
         if (!mem::IsCommitted(va) || !mem::IsCommitted(va + uint32_t(bytes) - 1)) continue;
+        if (selective_ && !Rewritten(va, uint32_t(bytes))) continue;
+        wanted_bytes_ += bytes;
         if (kept_bytes_.size() + bytes > kRegionBytes || kept_count_ >= kRegionHeaders) {
             kept_full_ = true;  // that draw would read what the title wrote after it: the last draws, the HUD, in pieces
             continue;
@@ -598,9 +623,15 @@ void Interpolating::Present(const Surface& front) {
     const auto t = Clock::now();
     const double step = std::chrono::duration<double>(t - presented_).count();
     presented_ = t;
-    if (kept_full_) LOG_FIRST(4, "gpu: in-between frames: a step of %zu draws has more vertices than are kept, drawn as it is", count_);
+    if (kept_full_) {
+        LOG_FIRST(4, "gpu: in-between frames: a step of %zu draws has more vertices than are kept (%llu KB of %u KB, %u buffers), drawn as it is%s",
+                  count_, (unsigned long long)(wanted_bytes_ >> 10), kRegionBytes >> 10, kept_count_,
+                  selective_ ? "" : "; from now on only those rewritten within a step are kept");
+        selective_ = true;
+    }
     const bool blend = On() && count_ && !kept_full_ && Match() && UploadKept();
     if (Test() && blend) {
+        blended_steps_++;
         for (int i = 1; i < Test(); i++) {
             Replay(float(i) / float(Test()));
             inner_->Present(front);
@@ -677,18 +708,23 @@ void Interpolating::Present(const Surface& front) {
     }
     shown_++;
     steps_++;
+    most_kept_ = std::max(most_kept_, kept_bytes_.size());
     if (t - reported_ > std::chrono::seconds(10)) {
         if (reported_ != Clock::time_point{} && blended_steps_)
-            LOGR("gpu: in-between frames: %u frames for %u steps (%u blended) in the last 10 s", shown_, steps_, blended_steps_);
+            LOGR("gpu: in-between frames: %u frames for %u steps (%u blended) in the last 10 s, at most %zu KB of vertices kept a step",
+                 shown_, steps_, blended_steps_, most_kept_ >> 10);
         reported_ = t;
         shown_ = steps_ = blended_steps_ = 0;
+        most_kept_ = 0;
     }
     now_.swap(before_);
     before_count_ = count_;
     count_ = 0;
     kept_bytes_.clear();
     kept_count_ = 0;
+    wanted_bytes_ = 0;
     kept_full_ = false;
+    used_.clear();
 }
 }  // namespace
 
