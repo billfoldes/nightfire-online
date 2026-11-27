@@ -181,7 +181,8 @@ constexpr size_t kBundleMax = kHeader + 1 + kBody * kRedundant;
 constexpr size_t kNameLen = 16;
 constexpr size_t kNamesStart = kHeader + kMaxPlayers + kMaxPlayers * kNameLen;  // a build without handicaps
 constexpr size_t kStartSize = kNamesStart + kMaxPlayers;
-constexpr size_t kStartFull = kStartSize + 1;  // then the host's flags: 1 its unlock_missions, 2 unlock_multiplayer
+constexpr size_t kStartFull = kStartSize + 1;  // then the host's flags: 1 its unlock_missions, 2 unlock_multiplayer,
+                                               // 4 unlock_rewards
 constexpr size_t kStartSaves = kStartFull + 4;  // then the id of the host's saves (kSaves)
 constexpr size_t kStartBots = kStartSaves + 1 + kBotSettings + 4;  // then the host's net_bots, its bot settings,
                                                                     // the session's seed for their Random
@@ -367,6 +368,7 @@ struct Session {
     bool host_gone = false;
     bool unlocks = false;  // the host's unlock_missions: every machine's mission list is the host's
     bool unlocks_mp = false;  // the host's unlock_multiplayer, the same for multiplayer's lists
+    bool unlocks_rewards = false;  // the host's unlock_rewards, the same for the medals' rewards
     uint8_t bots = 0;      // the host's net_bots: 0 the bot menu's count, else 1 + the count
     uint8_t bot[kBotSettings] = {};  // the host's bot settings as of the tick the game has now
     uint8_t host_setting[kHostSettings] = {};  // the host's co-op settings, the same way
@@ -588,7 +590,7 @@ size_t PackStart(uint8_t* b) {
     std::memcpy(b + n, g.peer_char, kMaxPlayers), n += kMaxPlayers;
     std::memcpy(b + n, g.peer_name, sizeof(g.peer_name)), n += sizeof(g.peer_name);
     std::memcpy(b + n, g.peer_handicap, kMaxPlayers), n += kMaxPlayers;
-    b[n++] = uint8_t((g.unlocks ? 1 : 0) | (g.unlocks_mp ? 2 : 0));
+    b[n++] = uint8_t((g.unlocks ? 1 : 0) | (g.unlocks_mp ? 2 : 0) | (g.unlocks_rewards ? 4 : 0));
     std::lock_guard l(g_saves.m);
     std::memcpy(b + n, &g_saves.id, 4), n += 4;
     b[n++] = g.bots;
@@ -2168,6 +2170,7 @@ void Receive() {
                     g.peer_handicap[p] = uint8_t(std::min<uint32_t>(buf[kNamesStart + p], kHandicapChoices - 1));
             g.unlocks = size_t(n) >= kStartFull && (buf[kStartSize] & 1);
             g.unlocks_mp = size_t(n) >= kStartFull && (buf[kStartSize] & 2);
+            g.unlocks_rewards = size_t(n) >= kStartFull && (buf[kStartSize] & 4);
             g.bots = size_t(n) >= kStartBots ? uint8_t(std::min<uint32_t>(buf[kStartSaves], kBotChoices - 1)) : 0;
             for (int i = 0; i < kBotSettings; i++)
                 g.bot[i] = size_t(n) >= kStartBots ? uint8_t(std::min(buf[kStartSaves + 1 + i] + 0u, BotChoices(i) - 1)) : 0;
@@ -2185,6 +2188,9 @@ void Receive() {
             if (g.unlocks_mp != unlock_multiplayer)
                 LOGR("net: the host has multiplayer %s (unlock_multiplayer): this machine's lists are the host's",
                      g.unlocks_mp ? "unlocked" : "as the save has it");
+            if (g.unlocks_rewards != unlock_rewards)
+                LOGR("net: the host has every reward %s (unlock_rewards): this machine's are the host's",
+                     g.unlocks_rewards ? "unlocked" : "as the save has them");
             g.active = g.players > 1;
             g_booting.store(true);
             LOGR("net: booting with %d connected (%d player slots); controller %d is this one's",
@@ -2732,6 +2738,7 @@ void Meet(const std::string& join_address, uint32_t lan_ip, void* window_handle)
         g.peer_handicap[0] = uint8_t(std::min<uint32_t>(my_handicap, kHandicapChoices - 1));
         g.unlocks = unlock_missions;
         g.unlocks_mp = unlock_multiplayer;
+        g.unlocks_rewards = unlock_rewards;
         g.bots = uint8_t(std::min<uint32_t>(bots, kBotChoices - 1));
         {
             std::lock_guard<std::recursive_mutex> ui(app::UiLock());
@@ -3243,6 +3250,7 @@ bool CoopTougherEnemies() { return g.active ? g.tougher_enemies : coop_tougher_e
 bool QuitTogether() { return g.active ? g.quit_together : quit_together; }
 bool UnlocksMissions() { return g.active ? g.unlocks : unlock_missions; }
 bool UnlocksMultiplayer() { return g.active ? g.unlocks_mp : unlock_multiplayer; }
+bool UnlocksRewards() { return g.active ? g.unlocks_rewards : unlock_rewards; }
 
 bool HandicapFor(int player, int32_t& handicap) {
     if (!g.active || player < 0 || player >= kMaxPlayers) return false;
@@ -3710,7 +3718,7 @@ void SaveState(snapshot::Writer& w) {
     std::lock_guard lock(g.m);
     w.Pod(g.players), w.Pod(g_target), w.Pod(delay), w.Pod(g.tick_now), w.Pod(g.mine), w.Pod(g.applied);
     w.Pod(g.peer_char), w.Pod(g.peer_name), w.Pod(g.peer_handicap), w.Pod(g.next_name);
-    w.Pod(g.friendly_fire), w.Pod(g.left_at), w.Pod(g.back_at), w.Pod(g.host_gone), w.Pod(g.unlocks), w.Pod(g.unlocks_mp);
+    w.Pod(g.friendly_fire), w.Pod(g.left_at), w.Pod(g.back_at), w.Pod(g.host_gone), w.Pod(g.unlocks), w.Pod(g.unlocks_mp), w.Pod(g.unlocks_rewards);
     w.Pod(g.more_enemies), w.Pod(g.tougher_enemies), w.Pod(g.bots), w.Pod(g.bot_blocks), w.Pod(g.quit_together);
     w.Pod(g.bot), w.Pod(g.bot_changes), w.Pod(g.bot_changed_at), w.Pod(g.bot_seed), w.Pod(g.bot_menu), w.Pod(g.bot_round), w.Pod(g.host_setting);
     for (const Stream& st : g.stream) w.U32(st.next), w.Map(st.known);
@@ -3720,7 +3728,7 @@ void LoadState(snapshot::Reader& r) {
     std::lock_guard lock(g.m);
     r.Pod(g.players), r.Pod(g_target), r.Pod(delay), r.Pod(g.tick_now), r.Pod(g.mine), r.Pod(g.applied);
     r.Pod(g.peer_char), r.Pod(g.peer_name), r.Pod(g.peer_handicap), r.Pod(g.next_name);
-    r.Pod(g.friendly_fire), r.Pod(g.left_at), r.Pod(g.back_at), r.Pod(g.host_gone), r.Pod(g.unlocks), r.Pod(g.unlocks_mp);
+    r.Pod(g.friendly_fire), r.Pod(g.left_at), r.Pod(g.back_at), r.Pod(g.host_gone), r.Pod(g.unlocks), r.Pod(g.unlocks_mp), r.Pod(g.unlocks_rewards);
     r.Pod(g.more_enemies), r.Pod(g.tougher_enemies), r.Pod(g.bots), r.Pod(g.bot_blocks), r.Pod(g.quit_together);
     r.Pod(g.bot), r.Pod(g.bot_changes), r.Pod(g.bot_changed_at), r.Pod(g.bot_seed), r.Pod(g.bot_menu), r.Pod(g.bot_round), r.Pod(g.host_setting);
     for (Stream& st : g.stream) st.next = r.U32(), r.Map(st.known);

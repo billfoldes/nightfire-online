@@ -74,6 +74,7 @@ extern bool quit_together;                     // net_quit_together: the host's 
 bool QuitTogether();                          // the host's as of the tick the game has now, as CoopFriendlyFire
 bool UnlocksMissions();  // unlock_missions as the session has it: the host's (kStart), else this machine's
 bool UnlocksMultiplayer();  // unlock_multiplayer, the same way
+bool UnlocksRewards();      // unlock_rewards, the same way
 
 const char* CharacterChoiceName(uint32_t choice);          // 0 = "Default (Menu)", 1..29 = character name
 void SetCharacterName(uint32_t model_idx, const char* s);  // populated from default.xbe's string table (0x7EB90)

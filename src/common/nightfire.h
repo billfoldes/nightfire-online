@@ -15,6 +15,7 @@ extern const bool kDriving;  // Driving.xbe's exe (src/driving/hooks.cpp), defau
 extern bool skip_intro;
 extern bool unlock_missions;  // default.xbe's every-mission flag (src/game/hooks.cpp)
 extern bool unlock_multiplayer;  // the same flag for multiplayer's lists alone (src/game/hooks.cpp)
+extern bool unlock_rewards;  // every medal's reward, what the codename cheats give (src/game/hooks.cpp)
 extern bool skip_tutorial;
 extern bool hide_hud;  // no HUD, for screenshots (src/game/hud.cpp, src/driving/hud.cpp)
 extern uint32_t fov_percent;  // the 3D views' field of view, percent of the game's (src/game/view.cpp, src/driving/view.cpp)

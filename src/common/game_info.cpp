@@ -38,6 +38,7 @@ bool hide_hud = false;
 bool others_reticles = false;
 bool unlock_missions = false;
 bool unlock_multiplayer = false;
+bool unlock_rewards = false;
 uint32_t fov_percent = 100;
 extern bool modern_buttons;  // src/common/buttons.cpp
 
@@ -95,6 +96,7 @@ void Init() {
     if (const char* e = std::getenv("NF_HIDE_HUD"); e && *e) nf::hide_hud = *e == '1';
     if (const char* e = std::getenv("NF_UNLOCK_MISSIONS"); e && *e) nf::unlock_missions = *e == '1';
     if (const char* e = std::getenv("NF_UNLOCK_MULTIPLAYER"); e && *e) nf::unlock_multiplayer = *e == '1';
+    if (const char* e = std::getenv("NF_UNLOCK_REWARDS"); e && *e) nf::unlock_rewards = *e == '1';
     if (const char* e = std::getenv("NF_MODERN_BUTTONS"); e && *e) nf::modern_buttons = *e == '1';
     // every achievement's condition parses (a typo would leave it never met)
     for (const achievements::Def& d : app::kGame.achievements)
@@ -104,6 +106,7 @@ void Init() {
     if (nf::hide_hud) LOGR("nightfire: the HUD is hidden (hide_hud)");
     if (nf::unlock_missions) LOGR("nightfire: every mission can be played (unlock_missions)");
     if (nf::unlock_multiplayer) LOGR("nightfire: all of multiplayer can be picked (unlock_multiplayer)");
+    if (nf::unlock_rewards) LOGR("nightfire: every medal's reward is unlocked (unlock_rewards)");
     if (!nf::modern_buttons) LOGR("nightfire: the console's button pictures (modern_buttons off)");
 }
 
@@ -551,6 +554,8 @@ const app::GameInfo app::kGame = {
                  "At once: every mission can be picked, whatever the codename has finished. The ones not reached yet stay greyed out in the mission list, but select them and they play. The save is not changed (off again, it is as it was). Online, the host's setting as the session started is everyone's."},
                 {"unlock_multiplayer", &nf::unlock_multiplayer, nullptr, "Unlock all of multiplayer (greyed ones can be picked)",
                  "At once: every character (the bots' too), map and scenario of multiplayer can be picked, whatever the codename has won. The locked ones may stay greyed out in the lists, but select them and they play. The missions are left as they are (Unlock every mission does both), and the save is not changed. Online, the host's setting as the session started is everyone's."},
+                {"unlock_rewards", &nf::unlock_rewards, nullptr, "Unlock every reward (what the cheat codes give)",
+                 "Every reward the missions' medals give, as the codename cheats (PASSPORT, Q LAB and the others) unlock them: the gadgets' upgrades, the bonus characters, maps and modes. The gadgets are upgraded as a codename loads (the next level or menu after turning it on). The save is not changed (off again, it is as earned). Online, the host's setting as the session started is everyone's."},
                 {"modern_buttons", &nf::modern_buttons, nullptr, "Modern button pictures",
                  "A controller's prompts as today's Xbox pad marks them: LB and RB for White and Black, Menu and View for Start and Back."},
                 {"fov_percent", nullptr, &nf::fov_percent, "Field of view (%)",

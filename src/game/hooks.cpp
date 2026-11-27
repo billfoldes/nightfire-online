@@ -246,6 +246,24 @@ NF_UNLOCKED_MP(sub_00087790)
 NF_UNLOCKED_MP(sub_00086410)
 #undef NF_UNLOCKED_MP
 
+// unlock_rewards: what a mission's medals give (0x17F47C's table: per mission and medal its reward, 4 a gadget's
+// upgrade) is decoded by 0xB1740 from the codename's 64 reward bits ([0x25D6E8 + 8 * codename], which the codename
+// cheats such as PASSPORT and Q LAB set through 0x7CB10). Decoded from all 64 set instead, every reward is had while
+// the bits themselves, and so the save, stay as earned; the gadgets' upgrades as the codename loads (0x7CB10's
+// 0xB9E30)
+X86_EXTERN_FUNC(__imp__sub_000B1740);
+X86_FUNC(sub_000B1740) {  // (bits*, mission, medal, ?, out*)
+    constexpr uint32_t kRewardBits = 0x25D6E8, kCodenames = 4;
+    uint32_t bits = kernel::R32(ctx.esp + 4);
+    if (!nf::net::UnlocksRewards() || bits < kRewardBits || bits >= kRewardBits + 8 * kCodenames || (bits - kRewardBits) % 8)
+        return __imp__sub_000B1740(ctx, base);
+    uint32_t all = (ctx.esp - 0x100) & ~7u;
+    kernel::W32(all, 0xFFFFFFFFu), kernel::W32(all + 4, 0xFFFFFFFFu);
+    kernel::W32(ctx.esp + 4, all);
+    __imp__sub_000B1740(ctx, base);
+    kernel::W32(ctx.esp + 4, bits);
+}
+
 // the hooks' own state that steers the game: a rejoining machine's copy must decide as the session's do
 namespace nf {
 void SaveViewState(snapshot::Writer& w);
