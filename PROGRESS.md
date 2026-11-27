@@ -116,6 +116,14 @@ Newest first. Each entry: date, what changed, what was learned, what's next.
 
 ## Log
 
+### 2026-11-26 - John's co-op list (v2.0.8)
+- **Extra co-op enemies no longer stand in walls or seal a hall** (src/game/enemies.cpp): a copy stood 0.8 to a fixed
+  side of its original, whatever was there. Now each copy tries eight places around the original and takes one whose
+  way is clear (0x2C5B0, the sight test 0xB54D0 uses for combatants, mask 0x623) a little past it, with a floor
+  under it, preferring the least open ones (toward walls and corners, out of walkways); no place, no copy. The
+  placed characters' turn is (0, heading in radians, 0). The Exchange in co-op: 12 copies placed, both machines
+  identical; the probes tell walls apart (30 m probes mostly blocked, some sides refused).
+
 ### 2026-11-25 - Through the relay, straight when it can; UPnP for hosts by IP address (v2.0.7)
 - **Direct connections through the relay** (net_direct, on by default, every player's own): the relay gives a host
   and a joiner that both allow it each other's address and a secret (master.py's peer packet), they punch through

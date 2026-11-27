@@ -5,10 +5,12 @@
 // points at the spawner's +0x38, 0xAC bytes each, the record at +8). Each is set up by 0x42A90 (the placed ones at
 // the level's start, 0x31FD0, the others as they spawn), which sets the health ([state+0x90], its most +0x94: 12
 // for most guards) from zero. The team ([state+0x44]) is 1 for the enemies (2 and 3 the others: allies, civilians).
-//   In a co-op session every enemy comes with one more per extra player, beside it, and every enemy's health is
+//   In a co-op session every enemy comes with one more per extra player, beside it where there is room (Spots: the
+// turn's y is the heading, radians; 0x2C5B0 tests the way), and every enemy's health is
 // 1 + 0.5 per extra player of the game's (the host's net_coop_more_enemies and net_coop_tougher_enemies, each on by
 // default). Every machine runs the same calls on the same frames: lockstep holds.
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <vector>
@@ -19,6 +21,7 @@
 #include "kernel/kernel.h"
 #include "xdk/hle.h"
 
+X86_EXTERN_FUNC(__imp__sub_0002C5B0);
 X86_EXTERN_FUNC(__imp__sub_0002FC50);
 X86_EXTERN_FUNC(__imp__sub_0002FCF0);
 X86_EXTERN_FUNC(__imp__sub_0002FD80);
@@ -35,7 +38,14 @@ using kernel::W32;
 constexpr uint32_t kPlacedRet = 0xA56B9;  // 0xA4BC0's call of 0x2FCF0: a level's placed character
 constexpr uint32_t kPointSize = 0xAC, kRecordSize = kPointSize - 8;
 constexpr uint8_t kEnemyTeam = 1;
-constexpr float kOffsets[3][2] = {{0.8f, 0.0f}, {-0.8f, 0.0f}, {0.0f, -0.8f}};  // x, z beside the original
+// a copy's place: kStep from the original at one of these turns from its heading, whose way there is clear of walls
+// and characters a little past it (kRoom) and which has a floor under it (kFloor down). Of those, the ones with the
+// least open space beyond (clear to kOpen's distances) come first: the copies stand toward the walls and corners, not
+// out in a corridor or across a walkway; a copy with no such place is not made
+constexpr float kStep = 0.8f, kRoom = 0.45f, kFloor = 2.0f, kEye = 0.6f;
+constexpr float kOpen[2] = {2.0f, 3.5f};
+constexpr float kTurns[8] = {1.5707964f, -1.5707964f, 3.1415927f, 0.0f, 2.3561945f, -2.3561945f, 0.7853982f, -0.7853982f};
+constexpr uint32_t kSightMask = 0x623;  // 0xB54D0's for a combatant in sight (0x2C5B0)
 
 float GetF(uint32_t va) {
     uint32_t v = R32(va);
@@ -90,11 +100,53 @@ struct PlacedOne {
 };
 std::vector<PlacedOne> g_placed;  // the level's load to its start
 
-void Placed(uint32_t pos, uint32_t to, int k) {
-    SetF(to, GetF(pos) + kOffsets[k][0]);
-    SetF(to + 4, GetF(pos + 4));
-    SetF(to + 8, GetF(pos + 8) + kOffsets[k][1]);
+// 0x2C5B0 (cdecl: &from, &to, from's room, a character it passes, another, what stops it): 1 when nothing does
+bool Clear(X86Context& ctx, uint8_t* base, const float from[3], const float to[3], uint32_t room, uint32_t self) {
+    Scratch s(ctx, 0x20);
+    for (int i = 0; i < 3; i++) SetF(s.va + 4 * uint32_t(i), from[i]), SetF(s.va + 0x10 + 4 * uint32_t(i), to[i]);
+    return (Call(ctx, base, __imp__sub_0002C5B0, {s.va, s.va + 0x10, room, self, 0u, kSightMask}) & 0xFF) != 0;
 }
+
+// up to want places beside the character obj (heading yaw, radians about y) for its copies, as offsets from its
+// own; the copies made at the earlier ones stop the later ones' way there
+struct Spot {
+    float dx, dz;
+};
+int Spots(X86Context& ctx, uint8_t* base, uint32_t obj, float yaw, int want, Spot* out) {
+    uint32_t room = R32(obj + 0x20);
+    float at[3] = {GetF(obj + 0x24), GetF(obj + 0x28) + kEye, GetF(obj + 0x2C)};
+    struct Place {
+        Spot at;
+        int open;
+    };
+    Place ok[8];
+    int n = 0;
+    for (float turn : kTurns) {
+        float a = yaw + turn, sx = std::sin(a), sz = std::cos(a);
+        float past[3] = {at[0] + sx * (kStep + kRoom), at[1], at[2] + sz * (kStep + kRoom)};
+        float spot[3] = {at[0] + sx * kStep, at[1], at[2] + sz * kStep};
+        float under[3] = {spot[0], at[1] - kEye - kFloor, spot[2]};
+        if (!Clear(ctx, base, at, past, room, obj) || Clear(ctx, base, spot, under, room, obj)) continue;
+        int open = 0;
+        for (float d : kOpen) {
+            float there[3] = {at[0] + sx * d, at[1], at[2] + sz * d};
+            open += Clear(ctx, base, at, there, room, obj);
+        }
+        ok[n++] = {{sx * kStep, sz * kStep}, open};
+    }
+    std::stable_sort(ok, ok + n, [](const Place& a, const Place& b) { return a.open < b.open; });
+    int found = std::min(n, want);
+    for (int i = 0; i < found; i++) out[i] = ok[i].at;
+    return found;
+}
+
+void Placed(uint32_t pos, uint32_t to, const Spot& s) {
+    SetF(to, GetF(pos) + s.dx);
+    SetF(to + 4, GetF(pos + 4));
+    SetF(to + 8, GetF(pos + 8) + s.dz);
+}
+
+int g_skipped = 0;  // copies with no place this level, for the log
 }  // namespace
 
 // a character's setup (cdecl: the character): an enemy's health with the players
@@ -130,20 +182,27 @@ X86_FUNC(sub_00031FD0) {
     int extra = Copies(), made = 0;
     if (!extra) return nf::ReportHeap();
     Scratch s(ctx, 0x20 + kDataSize);
+    g_skipped = 0;
     for (const PlacedOne& p : placed) {
         if (!Enemy(p.obj)) continue;
         for (int i = 0; i < 3; i++) W32(s.va + 0x10 + 4 * uint32_t(i), p.rot[i]);
         std::memcpy(&kernel::G<uint8_t>(s.va + 0x20), p.data, kDataSize);
-        for (int k = 0; k < extra && k < 3; k++) {
+        float yaw;
+        std::memcpy(&yaw, &p.rot[1], 4);
+        Spot spots[3];
+        int n = Spots(ctx, base, p.obj, yaw, std::min(extra, 3), spots);
+        g_skipped += std::min(extra, 3) - n;
+        for (int k = 0; k < n; k++) {
             for (int i = 0; i < 3; i++) W32(s.va + 4 * uint32_t(i), p.pos[i]);
-            Placed(s.va, s.va, k);
+            Placed(s.va, s.va, spots[k]);
             if (uint32_t more = Call(ctx, base, __imp__sub_0002FCF0, {s.va, s.va + 0x10, s.va + 0x20})) {
                 Call(ctx, base, sub_00042A90, {more});
                 made++;
             }
         }
     }
-    LOGR("co-op: %d more enemies beside the level's placed ones (%d more players)", made, extra);
+    LOGR("co-op: %d more enemies beside the level's placed ones (%d more players); %d had no room beside theirs", made,
+         extra, g_skipped);
     nf::ReportHeap();
 }
 
@@ -155,12 +214,14 @@ X86_FUNC(sub_0002FD80) {
     uint32_t obj = ctx.eax;
     int extra = Copies();
     if (!extra || !Enemy(obj)) return;
+    Spot spots[3];
+    int n = Spots(ctx, base, obj, GetF(a[1] + 4), std::min(extra, 3), spots);
     Scratch s(ctx, 0x10);
-    for (int k = 0; k < extra && k < 3; k++) {
-        Placed(a[0], s.va, k);
+    for (int k = 0; k < n; k++) {
+        Placed(a[0], s.va, spots[k]);
         Call(ctx, base, __imp__sub_0002FD80, {s.va, a[1], a[2], a[3], a[4], a[5], a[6]});
     }
-    LOG_FIRST(3, "co-op: the script's enemy (%08X) with %d more beside it", obj, extra);
+    LOG_FIRST(3, "co-op: the script's enemy (%08X) with %d more beside it (%d wanted)", obj, n, extra);
     ctx.eax = obj;
 }
 
@@ -175,12 +236,14 @@ X86_FUNC(sub_000323E0) {
     for (uint32_t i = 0, n = in ? kernel::G<uint16_t>(in + 8) : 0; points && i < n; i++)
         if (R32(points + i * kPointSize + 8) == obj) rec = points + i * kPointSize + 8;
     if (!rec) return;
+    Spot spots[3];
+    int n = Spots(ctx, base, obj, GetF(rec + 0x10 + 4), std::min(extra, 3), spots);
     Scratch s(ctx, kRecordSize);
-    for (int k = 0; k < extra && k < 3; k++) {
+    for (int k = 0; k < n; k++) {
         std::memcpy(&kernel::G<uint8_t>(s.va), &kernel::G<uint8_t>(rec), kRecordSize);
-        Placed(rec + 4, s.va + 4, k);
+        Placed(rec + 4, s.va + 4, spots[k]);
         if (uint32_t more = Call(ctx, base, __imp__sub_0002FC50, {s.va})) Call(ctx, base, sub_00042A90, {more});  // the health too
     }
-    LOG_FIRST(3, "co-op: a spawner's enemy (%08X) with %d more beside it", obj, extra);
+    LOG_FIRST(3, "co-op: a spawner's enemy (%08X) with %d more beside it (%d wanted)", obj, n, extra);
     ctx.eax = obj;
 }
