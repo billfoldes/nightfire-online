@@ -116,6 +116,29 @@ Newest first. Each entry: date, what changed, what was learned, what's next.
 
 ## Log
 
+### 2026-11-27 - F1's labels and footer; every bot's fields and team; the Nightshift freeze was the host's
+- **F1's labels are no longer cut off** (SDK overlay.cpp, John: Connect directly when possible (needs a restart),
+  Streamer mode, Host's address, How players reach me, the three Unlock rows): the values started at half the page
+  whatever the labels; now after the page's longest label (measured as its rows draw), half to 70% of the page.
+- **F1's help footer no longer jumps as the page scrolls**: it took the height of the help under the mouse each
+  frame, so scrolling quickly over rows with longer and shorter helps resized the page and its scroll bar. It holds
+  the page's tallest help now (every row's measured as it draws, grow only, reset with the page).
+- **Bots 1 to 6 have Bots 7 and 8's fields in F1, and every bot a team** (src/common/game_info.cpp, net.h,
+  src/game/bots.cpp): each bot is a folded section (character, Team, the seven fields). The fields apply at the
+  spawn (BotsEntry on the entry's copy; Default the menu's); Team (MI6, Phoenix: the entry's +0x0F 1 and 0, the
+  character side table 0x163628 + 9 says Bond's side, 0, is team 1; the game's text names the teams MI6 and Phoenix,
+  "This bot will play on the MI6 team") goes into the copy and, for Bots 1 to 6, into the menu's entries each frame,
+  where the game picks the spawn base and the Start page's list. Default shows the team the bot is on now (read
+  from this PC's settings under the UI lock: the session's lock comes first as the machines boot). 74 bot settings
+  now: host_bot_at takes the zoom byte's top two bits (7 bits, 128 a rotation); kVersion 41. 3 machines, 8 bots,
+  NF_NET_BOT=66=1,17=3: Bot 1 team 1 (MI6) and Bot 2 speed 2 (Fast) on all three, lockstep. Which colour each
+  team shows (the levels have Flag-Red and Flag-Blue) is John's to say.
+- **The Nightshift "black screen" was the host freezing** (John's logs 051, his Wine PC hosting, and 008): 0x0700000B
+  restarted at 1791 s after a fall; 2 s on the host's game thread logs nothing more (its window thread opens F1 at
+  1806), while 008 waits 15.7 s for its tick 106348, past where the host stopped, so not the game's code. As in the
+  capture the flag one (also John's PC hosting). The no-frame watchdog (v2.0.8) names it next time.
+- The keypad in John's Nightshift logs was before its fix (sessions 23:13, fix 00:40, in v2.0.8).
+
 ### 2026-11-27 - F1's Keyboard section changes the keys
 - John: a new player sees only the controller's inputs to map keys to and can't tell what a key does. F1 Controls'
   Keyboard section (each action in play and its keys) now has the two key buttons of the Inputs table on each row,
