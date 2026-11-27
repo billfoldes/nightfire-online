@@ -170,7 +170,7 @@ X86_FUNC(sub_000891E0) {
     for (int k = int(kMenuSlots); k < int(kMenuSlots) + extra; k++) {
         uint32_t entry = kMenuBots + uint32_t(k % int(kMenuSlots)) * kEntrySize;
         int c = Character(k);
-        uint32_t ch = c >= 0 ? uint32_t(c) : B(entry + 0x10), team = B(entry + 0x0F);
+        uint32_t ch = c >= 0 ? uint32_t(c) : B(entry + 0x10), team = BotTeam(k);
         if (ch >= kCharacters || (teams && team > 1)) continue;
         bool left = !teams || team == 1;
         uint32_t list = left ? 0x10000233 : 0x10000234, next = left ? 0x25E959 : 0x25E958;
@@ -181,6 +181,19 @@ X86_FUNC(sub_000891E0) {
         kernel::CallGuest(ctx, 0x728F0, {page, list, row, 0x24u, R32(0x17CB98 + ch * 0x18), 0u});
     }
     ctx.eax = eax;
+}
+
+// bot 0..7's team as its spawn makes it (BotsEntry on its menu entry's copy): a character picked by the host's bot
+// settings is on its side, as the menu puts it
+uint32_t BotTeam(int bot) {
+    constexpr uint32_t kScratch = 0x1DC550;  // the spawn's own default-entry scratch, as src/game/view.cpp's BotEntry
+    uint8_t saved[kEntrySize];
+    std::memcpy(saved, &B(kScratch), kEntrySize);
+    std::memmove(&B(kScratch), &B(kMenuBots + uint32_t(bot % int(kMenuSlots)) * kEntrySize), kEntrySize);
+    BotsEntry(bot, kScratch);
+    uint32_t team = B(kScratch + 0x0F);
+    std::memcpy(&B(kScratch), saved, kEntrySize);
+    return team;
 }
 
 void BotsMatchStart(X86Context& ctx) {

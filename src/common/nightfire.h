@@ -46,6 +46,7 @@ void DoorHintFetched();
 void BotsFrame(X86Context& ctx);                       // each frame: the host's changes in, its menu edits out
 void BotsMatchStart(X86Context& ctx);                  // a match spawns its bots: the bot menu gets its characters
 bool BotsName(X86Context& ctx, int bot, uint32_t dst);  // bot 0..7's character's name at dst, if its settings give one
+uint32_t BotTeam(int bot);                            // bot 0..7's team as its spawn makes it
 void BotsEntry(int bot, uint32_t entry);               // bot 0..7's bot menu entry (a copy at entry) as the match plays it     // default.xbe: 0x6D460 fetched a door hint's text (src/game/view.cpp)
 bool SharedMenuUp();
 bool MenuUpFor(int player);

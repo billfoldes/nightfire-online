@@ -166,6 +166,11 @@ Newest first. Each entry: date, what changed, what was learned, what's next.
   match clock in it (0xA25F0, [0x2637D8] at 480, 360); in each player's full-screen view that quarter sat over
   everyone's picture. With full-screen view the panel is not made and the clock is at the top (320, 56), as one
   player's. Headless, 3 machines in a match: gone, the clock at the top.
+- **Bots 7 and 8 are on one team everywhere** (John: in capture the flag one of the red team showed on the blue side
+  just before the match): the Start page listed them by Bot 1's or 2's menu entry's team, and SpawnLowBots chose
+  their spawn point by it too, while the spawn (BotEntry, BotsEntry) gives a bot whose character the host's
+  settings set its character's side (Bot 1 team 1, Bot 7 team 0 in John's log). nf::BotTeam (the spawn's own
+  answer, on a copy) now decides the page, the spawn point and the spawn. 3 machines, 7 bots: lockstep.
 - **F1's number popup stays open on − and +** (SDK overlay.cpp): it closes on Enter alone.
 - **F1 Controls lists what each key does** (SDK GameInfo::control_action, overlay.cpp's Keyboard section above
   Inputs while the keyboard plays): each input's action in play beside its keys, on foot from the game's controls

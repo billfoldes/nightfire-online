@@ -980,7 +980,7 @@ static void SpawnLowBots(X86Context& ctx, uint8_t* base, int players, int count)
         uint32_t entry = menu ? kMenuBots + uint32_t(k % kBotSlots) * 0x12 : 0;
         W32(kCombatantState + uint32_t(s) * kCombatantSize + 0x1C, 0);
         if (!nf::BotsName(ctx, int(kBotSlots) + k, cfg)) BotName(s, int(kBotSlots) + k + 1);
-        if (menu) W32(cfg + 0x20, kernel::G<uint8_t>(entry + 0x0F));
+        if (menu) W32(cfg + 0x20, nf::BotTeam(int(kBotSlots) + k));
         else if (R32(kIsTeamPlay)) W32(cfg + 0x20, uint32_t(s & 1));
         uint32_t team = kernel::G<uint16_t>(cfg + 0x20);
         uint32_t spot = CallGuest(ctx, base, __imp__sub_0009D3D0, {team, 0u}) & 0xFFFF;
