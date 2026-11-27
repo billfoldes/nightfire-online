@@ -14,6 +14,7 @@
 #include <thread>
 #include <vector>
 
+#include "app/app.h"
 #include "common/net.h"
 #include "common/nightfire.h"
 #include "core/log.h"
@@ -269,6 +270,20 @@ X86_FUNC(sub_000B1740) {  // (bits*, mission, medal, ?, out*)
     kernel::W32(ctx.esp + 4, all);
     __imp__sub_000B1740(ctx, base);
     kernel::W32(ctx.esp + 4, bits);
+}
+
+// The on-foot game's rate: each frame 0xDD1D0 hands 0x6B040 (rate, base) 60, or 50 on a 50 Hz TV. It keeps them
+// ([0x17C0F4], [0x17C0F0]) with the step 1 / rate ([0x17C104]) and the rest of its per-second values, and the game
+// counts its time in frames of it (its timers are seconds times [0x17C0F4], about 400 reads): at nf::GameRate()'s
+// rate the game plays at its own speed (Bond walked 5 m a second at 60 and at 120, headless)
+X86_EXTERN_FUNC(__imp__sub_0006B040);
+X86_FUNC(sub_0006B040) {
+    uint32_t rate = nf::GameRate();
+    if (kernel::R32(ctx.esp + 4) == 60 && kernel::R32(ctx.esp + 8) == 60) {
+        app::g_pace_hz = rate;
+        kernel::W32(ctx.esp + 4, rate), kernel::W32(ctx.esp + 8, rate);
+    }
+    __imp__sub_0006B040(ctx, base);
 }
 
 // the hooks' own state that steers the game: a rejoining machine's copy must decide as the session's do

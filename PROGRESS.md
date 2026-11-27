@@ -152,6 +152,15 @@ Newest first. Each entry: date, what changed, what was learned, what's next.
   draw and put back after it, so the game's state is untouched; the reticles are placed across the turned view
   (player 1's too). The Paris van's scope, player 2 aiming right: their own view looks along their aim, off it
   shows player 1's; both machines identical either way.
+- **Game frame rate** (frame_rate, F1 game options: 60, the monitor's refresh, 120, 144, 165, 240; NF_FRAME_RATE):
+  the game itself runs at that rate, not frames in between. On foot, 0xDD1D0 hands 0x6B040 (rate, base) each frame,
+  60 or 50 by the TV: the step 1 / rate [0x17C104] and the per-second values, and the timers count frames of
+  [0x17C0F4] (about 400 reads); Bond walked 0.50 m every 0.1 s at 60 and at 120. Driving's 0x117DA0 rate gives the
+  steps 1 / rate and the frame timer (0x10AE50, whole milliseconds: 6 at 144, the game 16% fast), whose period
+  (0x10EED3's table entry +0x3C, 100 ns) is set to 1 / rate exactly above 60: 125 steps of 1/120 a second at 120 (as
+  62.5 of 1/60 at 60), 144 at 144. Never above the frame cap (picking a rate raises it) or, with vsync, the
+  monitor's refresh; 60 in a session (both kinds of co-op tested asking for 120: 60, no drift); driving takes it
+  as Driving.xbe boots.
 - **F1's number popup stays open on − and +** (SDK overlay.cpp): it closes on Enter alone.
 - **F1 Controls lists what each key does** (SDK GameInfo::control_action, overlay.cpp's Keyboard section above
   Inputs while the keyboard plays): each input's action in play beside its keys, on foot from the game's controls

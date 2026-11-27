@@ -21,6 +21,12 @@ extern bool hide_hud;  // no HUD, for screenshots (src/game/hud.cpp, src/driving
 extern uint32_t fov_percent;  // the 3D views' field of view, percent of the game's (src/game/view.cpp, src/driving/view.cpp)
 float Ultrawide();            // how much wider than 16:9 the frame is shown, 1 on a 16:9 or 4:3 screen
 float FovScale();             // fov_percent as a factor, 0.5 to 1.5
+// the game's own frame rate (src/game/hooks.cpp, src/driving/refresh.cpp): a choice of kFrameRates, and the rate it
+// plays at now (60 online, never above the frame cap or, with vsync, the monitor's refresh; 60 at least)
+extern uint32_t frame_rate;
+constexpr uint32_t kFrameRates = 6;
+const char* FrameRateName(uint32_t index);
+uint32_t GameRate();
 // the on-foot crosshair (src/game/hud.cpp): a colour of kCrosshairColors (0 the game's own) and a size, percent
 extern uint32_t crosshair_color, crosshair_size;
 constexpr uint32_t kCrosshairColors = 10;

@@ -20,6 +20,10 @@
 // and 0x94720, skip a player's menu while the one before has one up: OwnMenuNotHeld, config/nightfire.toml).
 // Another 0x6AF70 (a cutscene, a level's end) leaves the paused players' flags set. Building a page clears every
 // player's controls: a player's own pause leaves the others' as they were (their START in the same frame counts).
+//   A door's keypad (0xD1550, a keypad object's update, at its state 3) opens its page (0x40000021) in the menu of
+// the player who used it ([0x1F656C]+0x8DE): in a session that menu is its player's own as the pause is, drawn on
+// their machine alone, and the menus after it are not held by it (2026-11-26, John: Nightshift's keypad showed on
+// every player's screen).
 #include <map>
 #include <cstdint>
 #include <algorithm>
@@ -58,6 +62,9 @@ bool g_close[4];        // their pause closes at the next menu update (they chos
 
 constexpr uint32_t kSpritePool = 0x29AA98;
 constexpr uint32_t kOpenPause = 0xAD57E;      // 0x93960 returning to 0xAD520: the pause page for its player
+constexpr uint32_t kOpenKeypad = 0xD1AF4;     // 0x93960 returning to 0xD1550: a keypad's page for its player
+bool g_keypad[4];                             // the player's menu is a keypad they use
+bool OwnMenu(int p) { return g_own[p] || g_keypad[p]; }
 int g_menu_player = -1;                       // the player whose menu is being built or updated
 int g_opening = -1;                           // the player whose own pause 0x93960 is opening
 uint8_t g_others[4][kControlSize];            // the other players' controls while it does (it clears them all)
@@ -89,7 +96,11 @@ PausedUpdate::~PausedUpdate() {
 // 0x93960 (src/game/pc_settings_item.cpp): the page being built is the pause of its player (its third argument)
 int MenuBuilt(uint32_t from, uint32_t player) {
     int was = g_menu_player;
-    if (from == kOpenPause && player < 4) {
+    if ((from == kOpenPause || from == kOpenKeypad) && player < 4) {
+        if (from == kOpenKeypad && net::Active() && !g_keypad[player]) {
+            g_keypad[player] = true;
+            LOGR("nightfire: player %d is at a keypad: their own menu", int(player) + 1);
+        }
         g_menu_player = g_opening = int(player);
         if (net::Active())
             for (uint32_t p = 0; p < 4; p++)
@@ -114,7 +125,7 @@ void ClosePauseLater(int player) {
 
 bool SharedMenuUp() {
     for (uint32_t i = 0; i < 4; i++)
-        if (kernel::R32(kMenus + i * kMenuSize + 0x1BC) != 0 && !OwnPause(int(i))) return true;
+        if (kernel::R32(kMenus + i * kMenuSize + 0x1BC) != 0 && !(net::Active() && OwnMenu(int(i)))) return true;
     return false;
 }
 
@@ -186,6 +197,7 @@ X86_FUNC(sub_00094370) {
             g_own[p] = false;
             W32(kPauseFlags + p * kPauseFlagSize, 0);
         }
+        if (g_keypad[p] && kernel::R32(kMenus + p * kMenuSize + 0x1BC) == 0) g_keypad[p] = false;
         fire |= net::Active() && g_own[p];
         if (!g_close[p]) continue;
         g_close[p] = false;
@@ -207,7 +219,7 @@ X86_FUNC(sub_00094370) {
 X86_HOST_API void OwnMenuNotHeld(X86Context& ctx, uint8_t* base) {
     (void)base;
     uint32_t i = ctx.esi / kMenuSize;
-    if (net::Active() && i > 0 && i < 4 && g_own[i - 1]) ctx.eax &= ~0xFFu;
+    if (net::Active() && i > 0 && i < 4 && OwnMenu(int(i) - 1)) ctx.eax &= ~0xFFu;
 }
 
 X86_EXTERN_FUNC(__imp__sub_00095A80);
@@ -242,7 +254,7 @@ bool DrawWithoutOthersPauses(X86Context& ctx, uint8_t* base, void (*draw)(X86Con
     if (!net::Active() || g_sprite_player.empty() || SharedMenuUp()) return false;
     int local = net::LocalPlayer();
     bool any = false;
-    for (int p = 0; p < 4; p++) any |= p != local && g_own[p];
+    for (int p = 0; p < 4; p++) any |= p != local && OwnMenu(p);
     if (!any) return false;
     uint32_t array = R32(ctx.esp + 8), first = R32(ctx.esp + 0xC), end = R32(ctx.esp + 0x10);
     if (!array || end <= first || end - first > 0x200) return false;
@@ -252,7 +264,7 @@ bool DrawWithoutOthersPauses(X86Context& ctx, uint8_t* base, void (*draw)(X86Con
         uint32_t sprite = R32(array + i * 4);
         was[i - first] = sprite;
         auto it = g_sprite_player.find(sprite);
-        if (it != g_sprite_player.end() && it->second != local && g_own[it->second]) continue;
+        if (it != g_sprite_player.end() && it->second != local && OwnMenu(it->second)) continue;
         W32(array + kept++ * 4, sprite);
     }
     if (kept == end) return false;
@@ -266,12 +278,12 @@ bool DrawWithoutOthersPauses(X86Context& ctx, uint8_t* base, void (*draw)(X86Con
 // snapshots (src/game/hooks.cpp): whose pause is up
 namespace nf {
 void SavePauseState(snapshot::Writer& w) {
-    w.Pod(g_own), w.Pod(g_start_held), w.Pod(g_close);
+    w.Pod(g_own), w.Pod(g_start_held), w.Pod(g_close), w.Pod(g_keypad);
     std::map<uint32_t, int> sprites(g_sprite_player.begin(), g_sprite_player.end());
     w.Map(sprites);
 }
 void LoadPauseState(snapshot::Reader& r) {
-    r.Pod(g_own), r.Pod(g_start_held), r.Pod(g_close);
+    r.Pod(g_own), r.Pod(g_start_held), r.Pod(g_close), r.Pod(g_keypad);
     std::map<uint32_t, int> sprites;
     r.Map(sprites);
     g_sprite_player.clear();
