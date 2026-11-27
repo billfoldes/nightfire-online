@@ -615,37 +615,60 @@ bool NoBotCharacters() {
 }
 bool NoEveryBotCharacter() { return net::bot_setting[net::kBotEvery] == 0; }
 bool NoBotFields() {
-    for (int i = net::kBotField; i < net::kBotSettings; i++)
+    for (int i = net::kBotField + int(net::kBotFieldCount); i < net::kBotTeam; i++)  // Bot 1's are what the others take
         if (net::bot_setting[i]) return false;
     return true;
 }
-// Bot 7's or 8's fields: not while every bot has Bot 1's skill, nor for a character whose statistics are fixed (15 on)
+// a bot's fields: not while every bot has Bot 1's skill (Bot 1's own apart), nor for a character whose statistics
+// are fixed (15 on)
 template <int Bot>
 bool BotFieldsFree() {
-    if (net::bot_setting[net::kBotSkill]) return false;
+    if (net::bot_setting[net::kBotSkill] && Bot > 0) return false;
     uint32_t c = net::bot_setting[net::kBotEvery] ? net::bot_setting[net::kBotEvery] : net::bot_setting[net::kBotChar + Bot];
     return c == 0 || c == net::kBotRandom || c <= 15;
 }
 template <int Field>
 const char* BotFieldName(uint32_t choice) { return net::BotFieldChoiceName(Field, choice); }
 
-#define BOT_CHAR(n)                                                                                                    \
-    BotRow("net_bot_char_" #n, &net::bot_setting[net::kBotChar + n - 1], "Bot " #n " character",                       \
-           "The game's bot menu's Bot " #n " in an online match: the menu shows this character, and one picked there comes back here. Default: the menu's own. Random: picked again each match. Greyed while Every bot's character is set.", \
-           net::kBotCharChoices, net::BotCharChoiceName, NoEveryBotCharacter)
-// Bots 7 and 8 (past the menu's six: Bot like, 1 or 2, again by default)
-#define BOT_LOW(n, like)                                                                                               \
-    BotRow("net_bot_char_" #n, &net::bot_setting[net::kBotChar + n - 1], "Bot " #n " character",                       \
-           "Bot " #n " is past the game's bot menu's six. Default: it plays Bot " #like " again, character and fields as the menu has them. Random: picked again each match. Greyed while Every bot's character is set.", \
+// the team bot 0..7 plays for now in a session (1 MI6, 0 Phoenix; -1 not known), as src/game/bots.cpp's BotsEntry
+// makes it: its menu entry's, or its character's side when its setting gives it another character. This PC's
+// settings (the session's on the host), under the settings window's lock: the session's own lock is taken before
+// that one as the machines boot
+int TeamNow(int bot) {
+    constexpr uint32_t kMenuBots = 0x245282, kEntrySize = 0x12, kCharacterStats = 0x163628, kStatsSize = 14;
+    if (nf::kDriving || !net::Active()) return -1;
+    if (uint32_t t = net::bot_setting[net::kBotTeam + bot]) return t == 1;
+    uint32_t entry = kMenuBots + uint32_t(bot % 6) * kEntrySize;
+    uint32_t c = net::bot_setting[net::kBotEvery];
+    if (!c) c = net::bot_setting[net::kBotChar + bot];
+    if (c == net::kBotRandom || !mem::IsCommitted(entry) || !mem::IsCommitted(kCharacterStats)) return -1;  // not booted yet
+    bool own = c >= 1 && c < net::kBotRandom && (bot >= 6 || kernel::G<uint8_t>(entry + 0x10) != c - 1);
+    return own ? kernel::G<uint8_t>(kCharacterStats + (c - 1) * kStatsSize + 9) == 0 : kernel::G<uint8_t>(entry + 0x0F) == 1;
+}
+template <int Bot>
+const char* BotTeamName(uint32_t choice) {
+    if (choice) return net::BotTeamChoiceName(choice);
+    int t = TeamNow(Bot);
+    return t == 1 ? "Default (MI6 now)" : t == 0 ? "Default (Phoenix now)" : "Default";
+}
+
+#define BOT_ROWS(n, char_help)                                                                                         \
+    BotRow("net_bot_char_" #n, &net::bot_setting[net::kBotChar + n - 1], "Bot " #n " character", char_help,            \
            net::kBotCharChoices, net::BotCharChoiceName, NoEveryBotCharacter, "Bot " #n, true),                       \
-        BOT_FIELD(n, like, 0, "speed"), BOT_FIELD(n, like, 1, "personality"), BOT_FIELD(n, like, 2, "aggression"),     \
-        BOT_FIELD(n, like, 3, "accuracy"), BOT_FIELD(n, like, 4, "health"), BOT_FIELD(n, like, 5, "reaction"),         \
-        BOT_FIELD(n, like, 6, "recovery")
-#define BOT_FIELD(n, like, f, key)                                                                                     \
-    BotRow("net_bot" #n "_" key, &net::bot_setting[net::kBotField + (n - 7) * int(net::kBotFieldCount) + f],          \
+        BotRow("net_bot" #n "_team", &net::bot_setting[net::kBotTeam + n - 1], "Team",                                 \
+               "In the team scenarios (Team Arena, Capture the Flag, Team King of the Hill ...): MI6 or Phoenix. Default: the game's bot menu's Choose Team for Bots 1 to 6, Bot 1's or 2's for Bots 7 and 8, or the side of the character it plays here; it shows the team the bot is on now. Applies at the next match.", \
+               net::kBotTeamChoices, BotTeamName<n - 1>, nullptr),                                                     \
+        BOT_FIELD(n, 0, "speed"), BOT_FIELD(n, 1, "personality"), BOT_FIELD(n, 2, "aggression"),                     \
+        BOT_FIELD(n, 3, "accuracy"), BOT_FIELD(n, 4, "health"), BOT_FIELD(n, 5, "reaction"), BOT_FIELD(n, 6, "recovery")
+#define BOT_FIELD(n, f, key)                                                                                           \
+    BotRow("net_bot" #n "_" key, &net::bot_setting[net::kBotField + (n - 1) * int(net::kBotFieldCount) + f],          \
            net::kBotFields[f].label,                                                                                   \
-           "As the game's bot menu has it for its six. Default: the character's own when Bot " #n " has one here, else Bot " #like "'s. Greyed while Every bot's skill is Bot 1's, or for a character whose statistics are fixed.", \
+           "As the game's bot menu has it. Default: the menu's (Bots 7 and 8: Bot 1's or 2's), or the character's own when the bot plays another character here. Greyed while Every bot's skill is Bot 1's, or for a character whose statistics are fixed.", \
            net::kBotFields[f].count + 1, BotFieldName<f>, BotFieldsFree<n - 1>)
+#define BOT_MENU(n)                                                                                                    \
+    BOT_ROWS(n, "The game's bot menu's Bot " #n " in an online match: the menu shows this character, and one picked there comes back here. Default: the menu's own. Random: picked again each match. Greyed while Every bot's character is set.")
+#define BOT_LOW(n, like)                                                                                               \
+    BOT_ROWS(n, "Bot " #n " is past the game's bot menu's six. Default: it plays Bot " #like " again, character and fields as the menu has them. Random: picked again each match. Greyed while Every bot's character is set.")
 
 app::Option FrameRateRow() {
     app::Option o{"frame_rate", nullptr, &nf::frame_rate, "Game frame rate",
@@ -767,9 +790,9 @@ const app::GameInfo app::kGame = {
                        "Every bot in an online match plays this character (Random: each one its own, picked again each match), and the game's bot menu shows it. Default: each as Bot 1 to Bot 8 below say. Greyed while one of those has a character.",
                        net::kBotCharChoices, net::BotCharChoiceName, NoBotCharacters),
                 BotRow("net_bot_skill", &net::bot_setting[net::kBotSkill], "Every bot's skill",
-                       "Bot 1's: every bot plays with Bot 1's statistics from the game's bot menu (speed, aggression, accuracy, health, reaction and recovery; its personality too where it is on Bot 1's side), the bots whose statistics are fixed apart. Applies at the next match. Greyed while Bot 7 or Bot 8 has its own.",
+                       "Bot 1's: every bot plays with Bot 1's statistics from the game's bot menu (speed, aggression, accuracy, health, reaction and recovery; its personality too where it is on Bot 1's side), the bots whose statistics are fixed apart; Bot 1's own fields below count. Applies at the next match. Greyed while one of Bot 2 to Bot 8 has a field of its own.",
                        2, net::BotSkillChoiceName, NoBotFields),
-                BOT_CHAR(1), BOT_CHAR(2), BOT_CHAR(3), BOT_CHAR(4), BOT_CHAR(5), BOT_CHAR(6),
+                BOT_MENU(1), BOT_MENU(2), BOT_MENU(3), BOT_MENU(4), BOT_MENU(5), BOT_MENU(6),
                 BOT_LOW(7, 1), BOT_LOW(8, 2)},
     .load = LoadKeys,                     // Driving.xbe's keys apart (DrivingKeys)
     .save = SaveKeys,

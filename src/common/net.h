@@ -88,14 +88,16 @@ uint32_t BotBlocks();                                      // the bots' state be
 void SetBotBlocks(uint32_t va);
 // the host's bot settings (net_bot_*), every machine's in a session: kStart carries them, then the host's bundles a
 // value a tick, so a change in its settings window reaches every machine at the same tick. Bots 1 to 6 are the bot
-// menu's entries (src/game/bots.cpp writes the characters in); Bots 7 and 8 (below slot 4) have the fields too
+// menu's entries (src/game/bots.cpp writes them in at the spawn); Bots 7 and 8 are below slot 4
 constexpr uint32_t kBotRandom = kCharacterChoices;         // a character setting's Random
 constexpr uint32_t kBotCharChoices = kCharacterChoices + 1;  // 0 = Default, 1..29 a character, then Random
 constexpr uint32_t kBotFieldCount = 7;
 constexpr int kBotEvery = 0, kBotSkill = 1;  // every bot's character; every bot's skill (0 its own, 1 Bot 1's)
 constexpr int kBotChar = 2;                  // + bot 0..7: that bot's character
-constexpr int kBotField = kBotChar + 8;      // + (bot - 6) * kBotFieldCount + field: Bots 7 and 8's fields
-constexpr int kBotSettings = kBotField + 2 * int(kBotFieldCount);
+constexpr int kBotField = kBotChar + 8;      // + bot 0..7 * kBotFieldCount + field: that bot's fields
+constexpr int kBotTeam = kBotField + 8 * int(kBotFieldCount);  // + bot 0..7: its team in the team scenarios
+constexpr int kBotSettings = kBotTeam + 8;
+constexpr uint32_t kBotTeamChoices = 3;  // its character's side (the menu's), MI6 (the entry's team 1), Phoenix (0)
 struct BotField {        // a field of the bot menu's entry (0x12 bytes at 0x245282 a bot)
     const char* label;
     uint8_t offset, size, count;
@@ -108,6 +110,7 @@ uint32_t BotChoices(int setting);
 const char* BotCharChoiceName(uint32_t choice);
 const char* BotSkillChoiceName(uint32_t choice);
 const char* BotFieldChoiceName(int field, uint32_t choice);
+const char* BotTeamChoiceName(uint32_t choice);
 void SetBotSettings(const char* list);  // "setting=value,...", NF_NET_BOT
 int BotSetting(int setting);            // the session's as of the tick the game has now; 0 (Default) with no session
 uint32_t BotChanges();                  // how often the session's changed (the same on every machine)

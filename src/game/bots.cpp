@@ -12,8 +12,9 @@
 // changed (a round of the host's bundles later, so they arrive whole, net::BotSettingsWhole) or the menu got its
 // default characters (0x88EA0's 0x51, once: 0x25E4D7). The host's own edits there
 // (the character list, 0x8AB70's) come back to its settings (BotsMenuEdited, each frame), so the next ones it sends
-// say the same. Bots 7 and 8 (below slot 4, src/game/view.cpp) are past the menu: their entry is built at the spawn
-// (BotsEntry) from the first two entries, the character and the fields their settings give. An entry the menu never
+// say the same. Every bot spawns from a copy of its entry (src/game/view.cpp's BotEntry) given the fields and the
+// team (MI6 1, Phoenix 0) the host's settings give it (BotsEntry); Bots 7 and 8 (below slot 4) are past the menu,
+// their copy is the first two entries' with their own character. An entry the menu never
 // set up (the bots past its Playing ones, net_bots) has no statistics: its character's are played.
 //   With net_bots set the menu's Playing ones are the session's first six bots (PlayingFromSession, each frame), so
 // the match's Start page lists the bots the match will have; Bots 7 and 8 get their pictures after them there.
@@ -144,6 +145,8 @@ void PlayingFromSession() {
 
 }  // namespace
 
+void BotsTeams();
+
 void BotsFrame(X86Context& ctx) {
     if (!net::Active()) return;
     static uint8_t defaults = 0;  // 0x88EA0's 0x51 gives the menu its default characters once (0x25E4D7)
@@ -153,6 +156,7 @@ void BotsFrame(X86Context& ctx) {
     }
     BotsMenuEdited();
     PlayingFromSession();
+    BotsTeams();
 }
 
 // The Start page (0x891E0, its 0x4C): after the players its two picture lists (0x10000233, team 1 or everyone, and
@@ -208,30 +212,52 @@ bool BotsName(X86Context& ctx, int bot, uint32_t dst) {
     return true;
 }
 
+namespace {
+// bot 0..7's fields from the host's settings (Default: as the entry has them), not for fixed statistics
+void Fields(int bot, uint32_t entry, bool personality) {
+    if (B(entry + 0x10) >= kFixedStats) return;
+    for (uint32_t f = 0; f < net::kBotFieldCount; f++) {
+        uint32_t v = uint32_t(net::BotSetting(net::kBotField + bot * int(net::kBotFieldCount) + int(f)));
+        const net::BotField& field = net::kBotFields[f];
+        if (!v || v > field.count || (field.offset == 0x0B && !personality)) continue;
+        if (field.size == 2) kernel::G<uint16_t>(entry + field.offset) = field.values[v - 1];
+        else B(entry + field.offset) = uint8_t(field.values[v - 1]);
+    }
+}
+
+// the team the host's settings give bot 0..7 (entry +0x0F: 1 MI6, 0 Phoenix), -1 the entry's own
+int Team(int bot) {
+    uint32_t t = uint32_t(net::BotSetting(net::kBotTeam + bot));
+    return t == 1 ? 1 : t == 2 ? 0 : -1;
+}
+}  // namespace
+
+// Bots 1 to 6 are played and listed from the menu's entries, the spawn point chosen by their team there: a team the
+// host's settings give goes into the entry, each frame
+void BotsTeams() {
+    for (uint32_t i = 0; i < kMenuSlots; i++)
+        if (int t = Team(int(i)); t >= 0) B(kMenuBots + i * kEntrySize + 0x0F) = uint8_t(t);
+}
+
 void BotsEntry(int bot, uint32_t entry) {
     if (kernel::G<uint16_t>(entry + 4) == 0 && B(entry + 0x10) < kCharacters)  // never set up in the menu (no health)
         SetCharacter(entry, B(entry + 0x10), true);
     if (bot >= int(kMenuSlots)) {
         if (int c = Character(bot); c >= 0) SetCharacter(entry, uint32_t(c), true);
-        uint32_t c = B(entry + 0x10);
-        int k = bot - int(kMenuSlots);
-        for (uint32_t f = 0; f < net::kBotFieldCount && c < kFixedStats; f++) {
-            uint32_t v = uint32_t(net::BotSetting(net::kBotField + k * int(net::kBotFieldCount) + int(f)));
-            const net::BotField& field = net::kBotFields[f];
-            if (!v || v > field.count) continue;
-            if (field.size == 2) kernel::G<uint16_t>(entry + field.offset) = field.values[v - 1];
-            else B(entry + field.offset) = uint8_t(field.values[v - 1]);
-        }
     } else if (int c = Character(bot); c >= 0 && B(entry + 0x10) != c) {
         SetCharacter(entry, uint32_t(c), true);
     }
+    Fields(bot, entry, true);
     if (net::BotSetting(net::kBotSkill) && bot > 0 && B(entry + 0x10) < kFixedStats) {  // Bot 1's statistics
+        bool side = B(entry + 9) == B(kMenuBots + 9);  // another side's personalities are not Bot 1's
         for (uint32_t f = 0; f < net::kBotFieldCount; f++) {
             const net::BotField& field = net::kBotFields[f];
-            if (field.offset == 0x0B && B(entry + 9) != B(kMenuBots + 9)) continue;  // another side's personalities
+            if (field.offset == 0x0B && !side) continue;
             std::memmove(&B(entry + field.offset), &B(kMenuBots + field.offset), field.size);
         }
+        Fields(0, entry, side);
     }
+    if (int t = Team(bot); t >= 0) B(entry + 0x0F) = uint8_t(t);
 }
 
 }  // namespace nf

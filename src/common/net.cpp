@@ -87,7 +87,7 @@ int64_t NowMs() {
 }
 
 constexpr uint32_t kMagic = 0x4E464E31;  // "NFN1"
-constexpr uint16_t kVersion = 39;  // 1 (and 2, its Driving.xbe) sent one tick a bundle; 3 (4) no name or handicap;
+constexpr uint16_t kVersion = 41;  // 1 (and 2, its Driving.xbe) sent one tick a bundle; 3 (4) no name or handicap;
                                    // 5 (6) no co-op friendly fire; 7 (8) no rejoining; 9 (10) no host's saves;
                                    // 11 (12) the on-foot sound by the mixer; 13 (14) a driving load's clock counted,
                                    // the car's copied shots paid from player 1's weapon; 15 (16) a seat no one took
@@ -99,7 +99,8 @@ constexpr uint16_t kVersion = 39;  // 1 (and 2, its Driving.xbe) sent one tick a
                                    // mid-level; 31 (32) no character loaded mid-level; 33 (34) the bot menu's
                                    // Playing ones not the session's bots; 35 (36) no direct connections through
                                    // the relay, no UPnP; 37 (38) the extra enemies beside their originals
-                                   // whatever is there, no host co-op settings (kHostSettings)
+                                   // whatever is there, no host co-op settings (kHostSettings); 39 (40) Bots 7
+                                   // and 8's fields alone, no bot teams, a 5-bit host_bot_at
 constexpr uint8_t kHello = 1,   // a joiner asking to play, before boot
     kWelcome = 2,               // the host's answer: the controller it is given, the input delay
     kStart = 3,                 // the host: boot, with the session's player count in the sequence
@@ -189,7 +190,7 @@ constexpr size_t kStartBots = kStartSaves + 1 + kBotSettings + 4;  // then the h
 constexpr size_t kStartHost = kStartBots + kHostSettings;  // then the host's co-op settings (host_setting)
 // a host's bundle carries one of its bot settings, then its co-op settings, a tick each in turn (host_bot_at)
 constexpr int kRotation = kBotSettings + kHostSettings;
-static_assert(kRotation <= 32, "host_bot_at has 5 bits");
+static_assert(kRotation <= 128, "host_bot_at has 7 bits (the zoom's byte has its top two)");
 uint32_t HostChoices(int setting) { return setting == kHostCoopFail ? kCoopFailChoices : kCoopPickupsChoices; }
 constexpr size_t kHelloHandicap = kHeader + kNameLen + 1;
 constexpr size_t kHelloSize = kHelloHandicap + 4;  // then the id of the host's saves this machine has whole, 0 none
@@ -265,7 +266,7 @@ void PackBody(uint8_t* b, const Bundle* in) {
                      (in->friendly_fire ? 0x40 : 0) | (in->more_enemies ? 0x80 : 0));
     b[n++] = uint8_t((in->keyboard ? 1 : 0) | ((in->my_char & 0x3F) << 1) | (in->tougher_enemies ? 0x80 : 0));
     b[n++] = uint8_t((in->mouse ? 1 : 0) | ((in->host_bot & 0x3F) << 1) | (in->quit_together ? 0x80 : 0));
-    b[n++] = uint8_t(std::clamp<int>(in->zoom, -8, 8));
+    b[n++] = uint8_t((std::clamp<int>(in->zoom, -8, 8) + 8) | (in->host_bot_at & 0x60));
     std::memcpy(b + n, &in->pad.buttons, 2), n += 2;
     std::memcpy(b + n, in->pad.analog, 8), n += 8;
     std::memcpy(b + n, &in->pad.lx, 2), n += 2;
@@ -299,7 +300,8 @@ void UnpackBody(const uint8_t* b, Bundle& out) {
     out.mouse = (b[at + 2] & 1) != 0;
     out.host_bot = (b[at + 2] >> 1) & 0x3F;
     out.quit_together = (b[at + 2] & 0x80) != 0;
-    out.zoom = int16_t(std::clamp<int>(int8_t(b[at + 3]), -8, 8));
+    out.zoom = int16_t(std::min(b[at + 3] & 0x1F, 16) - 8);
+    out.host_bot_at |= b[at + 3] & 0x60;
     at += 4;
     std::memcpy(&out.pad.buttons, b + at, 2), at += 2;
     std::memcpy(out.pad.analog, b + at, 8), at += 8;
@@ -3810,7 +3812,7 @@ int CharacterFor(int slot) {
     return -1;
 }
 
-// the bot menu's fields as Bots 7 and 8's settings have them (0x8ADE0's rows on page 0x4000002C, the values it
+// the bot menu's fields as the bots' settings have them (0x8ADE0's rows on page 0x4000002C, the values it
 // stores in the entry): choice 0 is Default, choice k the field's k - 1th
 const BotField kBotFields[kBotFieldCount] = {
     {"Move Speed", 0x06, 1, 3, {"Slow", "Normal", "Fast"}, {0, 1, 2}},
@@ -3827,8 +3829,14 @@ const BotField kBotFields[kBotFieldCount] = {
 
 uint32_t BotChoices(int setting) {
     if (setting == kBotSkill) return 2;
-    if (setting >= kBotField && setting < kBotSettings) return kBotFields[(setting - kBotField) % kBotFieldCount].count + 1;
+    if (setting >= kBotField && setting < kBotTeam) return kBotFields[(setting - kBotField) % kBotFieldCount].count + 1;
+    if (setting >= kBotTeam && setting < kBotSettings) return kBotTeamChoices;
     return kBotCharChoices;
+}
+
+const char* BotTeamChoiceName(uint32_t choice) {
+    static const char* const kNames[kBotTeamChoices] = {"Its character's side", "MI6", "Phoenix"};
+    return choice < kBotTeamChoices ? kNames[choice] : "";
 }
 
 const char* BotCharChoiceName(uint32_t choice) {
