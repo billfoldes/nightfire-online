@@ -29,7 +29,7 @@
 namespace nf {
 bool PcPageMessage(X86Context& ctx, uint32_t player, uint32_t widget, uint32_t msg, uint32_t arg);  // pc_settings_page
 void OpenPcPage(X86Context& ctx, uint32_t player);
-int MenuBuilt(uint32_t from, uint32_t player);  // src/game/pause.cpp
+int MenuBuilt(uint32_t from, uint32_t player, uint32_t menu_arg);  // src/game/pause.cpp
 void MenuBuiltDone(int was);
 std::vector<uint8_t> PcPage(const std::vector<uint8_t>& av, uint32_t (*record_size)(uint32_t));
 }  // namespace nf
@@ -255,7 +255,7 @@ X86_EXTERN_FUNC(__imp__sub_00093960);
 X86_FUNC(sub_00093960) {
     uint32_t stream = R32(kStreamPtr), copy = stream ? Patched(stream) : 0;
     if (copy) W32(kStreamPtr, copy);
-    int was = nf::MenuBuilt(R32(ctx.esp), R32(ctx.esp + 0xC) & 0xFF);  // src/game/pause.cpp
+    int was = nf::MenuBuilt(R32(ctx.esp), R32(ctx.esp + 0xC) & 0xFF, ctx.esp + 0x10);  // src/game/pause.cpp
     __imp__sub_00093960(ctx, base);
     nf::MenuBuiltDone(was);
     if (copy) W32(kStreamPtr, stream);

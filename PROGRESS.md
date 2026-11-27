@@ -116,6 +116,16 @@ Newest first. Each entry: date, what changed, what was learned, what's next.
 
 ## Log
 
+### 2026-11-27 - Player 1's keypad is theirs alone too
+- **A keypad player 1 uses no longer shows on every screen** (src/game/pause.cpp, John: still on every screen after
+  v2.0.8): 0x93960's fourth argument is the menu a page goes in, and the keypad (0xD1AEF) always passes 1, whoever
+  used it (the user is right: 0xD0230 sets [0x1F656C] to the player who pressed it). Player 2's keypad fell in
+  their own menu by chance, which is all the 2026-11-26 test tried; player 1's went in player 2's, a menu no one
+  owned, so it was drawn everywhere. In a session the keypad's page now goes in its user's menu, as the pause does.
+  NF_KEYPAD_TEST=player,tick (the harness) has that player use the level's first idle keypad: Nightshift, two
+  machines, player 1 and then player 2 at it: the keypad on that player's screen alone each time (before: player
+  1's on both).
+
 ### 2026-11-27 - No extra guards at The Exchange's party; the gun's own views no longer follow player 1's
 - **No extra co-op enemies in The Exchange's party and the castle after it** (src/game/enemies.cpp, John: the copies
   stood in the way where the weapon is put away): Copies() is 0 in levels 0x07000007 (the party, red carpet, 58

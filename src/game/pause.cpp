@@ -20,12 +20,15 @@
 // and 0x94720, skip a player's menu while the one before has one up: OwnMenuNotHeld, config/nightfire.toml).
 // Another 0x6AF70 (a cutscene, a level's end) leaves the paused players' flags set. Building a page clears every
 // player's controls: a player's own pause leaves the others' as they were (their START in the same frame counts).
-//   A door's keypad (0xD1550, a keypad object's update, at its state 3) opens its page (0x40000021) in the menu of
-// the player who used it ([0x1F656C]+0x8DE): in a session that menu is its player's own as the pause is, drawn on
+//   A door's keypad (0xD1550, a keypad object's update, at its state 3) opens its page (0x40000021) for the player
+// who used it ([0x1F656C]+0x8DE, set by 0xD0230), in menu 1: in a session in that player's menu, their own as the
+// pause is, drawn on
 // their machine alone, and the menus after it are not held by it (2026-11-26, John: Nightshift's keypad showed on
 // every player's screen).
 #include <map>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <algorithm>
 #include <cstring>
 #include <unordered_map>
@@ -93,13 +96,19 @@ PausedUpdate::~PausedUpdate() {
     W32(kPauseFlags + uint32_t(port) * kPauseFlagSize, g_own[port] ? 1 : 0);
 }
 
-// 0x93960 (src/game/pc_settings_item.cpp): the page being built is the pause of its player (its third argument)
-int MenuBuilt(uint32_t from, uint32_t player) {
+// 0x93960 (src/game/pc_settings_item.cpp): the page being built is the pause of its player (its third argument;
+// menu_arg the address of its fourth, the menu it goes in). A keypad's page goes in menu 1 whoever used it: in a
+// session it goes in its player's menu as the pause does (2026-11-27, John: player 1's keypad showed on every screen,
+// in player 2's menu)
+int MenuBuilt(uint32_t from, uint32_t player, uint32_t menu_arg) {
     int was = g_menu_player;
     if ((from == kOpenPause || from == kOpenKeypad) && player < 4) {
-        if (from == kOpenKeypad && net::Active() && !g_keypad[player]) {
-            g_keypad[player] = true;
-            LOGR("nightfire: player %d is at a keypad: their own menu", int(player) + 1);
+        if (from == kOpenKeypad && net::Active()) {
+            W32(menu_arg, (R32(menu_arg) & ~0xFFu) | player);
+            if (!g_keypad[player]) {
+                g_keypad[player] = true;
+                LOGR("nightfire: player %d is at a keypad: their own menu", int(player) + 1);
+            }
         }
         g_menu_player = g_opening = int(player);
         if (net::Active())
@@ -220,6 +229,30 @@ X86_HOST_API void OwnMenuNotHeld(X86Context& ctx, uint8_t* base) {
     (void)base;
     uint32_t i = ctx.esi / kMenuSize;
     if (net::Active() && i > 0 && i < 4 && OwnMenu(int(i) - 1)) ctx.eax &= ~0xFFu;
+}
+
+// NF_KEYPAD_TEST=player,tick (the harness): that player uses the level's first idle keypad at that session tick
+// (0xD0230, a player's use of a keypad: its state 3, the user at 0x1F6568)
+X86_EXTERN_FUNC(__imp__sub_000D1550);
+X86_FUNC(sub_000D1550) {
+    static int test_player = -1;
+    static uint32_t test_tick = 0;
+    static bool parsed = false, done = false;
+    if (!parsed) {
+        parsed = true;
+        if (const char* e = std::getenv("NF_KEYPAD_TEST")) std::sscanf(e, "%d,%u", &test_player, &test_tick);
+    }
+    uint32_t obj = R32(ctx.esp + 4);
+    if (test_player >= 0 && !done && net::Active() && net::Tick() >= test_tick && obj &&
+        kernel::G<int16_t>(obj + 0xD0) == 0) {
+        done = true;
+        uint32_t player = R32(0x1F6654 + uint32_t(test_player) * 4);
+        LOGR("keypad test: player %d uses keypad %08X at session tick %u", test_player + 1, obj, net::Tick());
+        uint32_t eax = ctx.eax;
+        kernel::CallGuest(ctx, 0xD0230, {obj, player});
+        ctx.eax = eax;
+    }
+    __imp__sub_000D1550(ctx, base);
 }
 
 X86_EXTERN_FUNC(__imp__sub_00095A80);
