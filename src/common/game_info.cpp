@@ -810,6 +810,7 @@ const app::GameInfo app::kGame = {
     .same_code = {"7e4b8f8a54bacc61a5897ba5245fdd65bddc0752", "8d46a023dfbd5c89d4ee04fe28b24a9620de546a"},
     .squeeze_screen_programs = true,      // ultrawide: Driving.xbe draws its HUD and menus through vertex programs
     .edge_bars = true,                    // ultrawide: the sniper scope's black side bars reach the screen's sides
+    .native_target_max = 256,             // the driving sniper scope's blurred surround: 256x256 and 64x64 targets
     .default_volume = 50,                 // the game is loud at full level (2026-11-26, John)
     .sharpen_2d = true,                   // text and HUD pictures enlarged sharp (Settings::sharp_2d turns it off)
     .pal_console = true,                  // a PAL disc (region 4): the driving levels ask for NTSC\ files otherwise;

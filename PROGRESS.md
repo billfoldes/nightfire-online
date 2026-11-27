@@ -116,6 +116,17 @@ Newest first. Each entry: date, what changed, what was learned, what's next.
 
 ## Log
 
+### 2026-11-27 - The sniper scope's surround blurred as on the console
+- **The scope's surround is soft again at high resolutions** (SDK GameInfo::native_target_max, d3d_common.cpp
+  TargetScale; NightFire's 256; John's console and PC pictures of the Paris van tutorial: the PC's was nearly sharp
+  outside the sight): zoomed, Driving.xbe draws its scene again into two 256x256 targets (a reduced scene: about 10
+  draws against the main view's 350) and runs a 64x64 one through four copies half a texel apart, and stretches
+  them over the screen. The D3D12 and D3D11 renderers made every target at the render scale (2.25 at 1080p), so
+  the small ones held 2.25 times the console's detail and the stretch no longer blurred. Targets 256 or less across
+  and down (colour and depth) now stay at the console's size (at most 1); the main view keeps the render scale. The
+  2026-11-26 reference-renderer check matched because it draws at the console's size. On foot a 256x256 target (a
+  2D picture shrunk to 128x128 and grown back) is the console's size too now. Built for Windows; John to look.
+
 ### 2026-11-27 - Player 1's keypad is theirs alone too
 - **A keypad player 1 uses no longer shows on every screen** (src/game/pause.cpp, John: still on every screen after
   v2.0.8): 0x93960's fourth argument is the menu a page goes in, and the keypad (0xD1AEF) always passes 1, whoever
