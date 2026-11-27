@@ -248,6 +248,10 @@ struct GameInfo {
     // black 32x32 texture from x 0 to 81 and 559 to 640 beside the sight) keeps that edge, as an untextured one always
     // does (gpu::DrawSpan), so the bars reach the screen's sides; off, they are squeezed with the rest of the 2D
     bool edge_bars = false;
+    // render targets (colour and depth) this many texels or fewer across and down are drawn at the console's size, not
+    // the render scale: a title that blurs by drawing its scene small and stretching it (NightFire's sniper scope: the
+    // surround from 256x256 and 64x64 targets) keeps its blur; 0 scales every target
+    uint32_t native_target_max = 0;
     // Settings::volume when the settings file has none (a fresh install, or one from before the slider), percent
     uint32_t default_volume = 100;
     // the textures 2D draws use (pretransformed or as above; swizzled, up to 512 texels) are enlarged two or four times

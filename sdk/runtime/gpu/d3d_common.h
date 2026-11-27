@@ -165,6 +165,8 @@ void FillLightConstants(const State& s, const FixedKey& fk, DrawConstants& c);
 bool UnitTexcoords(const Assembled& a);
 D3D_PRIMITIVE_TOPOLOGY PrimitiveTopology(const Assembled& a);
 
+// a gw x gh target's scale: the render scale, at most 1 for a small one (GameInfo::native_target_max)
+float TargetScale(float scale, uint32_t gw, uint32_t gh);
 // Ultrawide: a screen shaped target shown wider than its guest shape gets more pixels across than down
 inline float XStretch(float aspect, uint32_t guest_h, uint32_t gw, uint32_t gh) {
     if (!guest_h || gh != guest_h || gw < gh || aspect <= 0) return 1;

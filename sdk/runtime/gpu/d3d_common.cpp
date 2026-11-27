@@ -21,6 +21,11 @@
 
 namespace gpu {
 
+float TargetScale(float scale, uint32_t gw, uint32_t gh) {
+    uint32_t most = app::kGame.native_target_max;
+    return most && gw <= most && gh <= most ? std::min(scale, 1.0f) : scale;
+}
+
 // ---- the shader cache: "XBESHC1" and a zero byte, then records of hash (8 bytes), size (4) and the blob
 namespace {
 constexpr char kShaderCacheMagic[8] = {'X', 'B', 'E', 'S', 'H', 'C', '1', 0};
