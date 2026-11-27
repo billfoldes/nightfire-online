@@ -116,6 +116,22 @@ Newest first. Each entry: date, what changed, what was learned, what's next.
 
 ## Log
 
+### 2026-11-27 - No extra guards at The Exchange's party; the gun's own views no longer follow player 1's
+- **No extra co-op enemies in The Exchange's party and the castle after it** (src/game/enemies.cpp, John: the copies
+  stood in the way where the weapon is put away): Copies() is 0 in levels 0x07000007 (the party, red carpet, 58
+  copies before) and 0x07000008 (8), found by snapshots of each of the mission's levels. Two machines straight into
+  each: both start and make none.
+- **Each player's own view on a mounted gun stays where they aim as player 1 turns it** (src/driving/coop.cpp,
+  John: past a point everyone's view was dragged along with player 1's): the aims were tangents across the gun's
+  view, so every turn of player 1's turned them too. Each aim keeps a direction in the world now; each tick its
+  tangents are worked out from the gun's view again, then held to the aim's reach (1.2 by 0.7), so only a gun turned
+  past that pushes it. A standalone check of the conversion: 1000 round trips keep the aim (1e-7), and a gun turned
+  0.3 rad leaves the aim's direction where it was. kVersion 43 (both change what every machine computes).
+- **"Other build" with everyone on the same release**: the browser's text now gives both online versions. The cause
+  found: scripts/build-win.sh installs the newest main into John's play folder, ahead of the release (kVersion 41
+  there, v2.0.9 39), so a session between that install and a release copy refuses. The log named (015) was not on
+  disk.
+
 ### 2026-11-27 - F1's labels and footer; every bot's fields and team; the Nightshift freeze was the host's
 - **F1's labels are no longer cut off** (SDK overlay.cpp, John: Connect directly when possible (needs a restart),
   Streamer mode, Host's address, How players reach me, the three Unlock rows): the values started at half the page

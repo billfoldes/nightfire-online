@@ -87,7 +87,7 @@ int64_t NowMs() {
 }
 
 constexpr uint32_t kMagic = 0x4E464E31;  // "NFN1"
-constexpr uint16_t kVersion = 41;  // 1 (and 2, its Driving.xbe) sent one tick a bundle; 3 (4) no name or handicap;
+constexpr uint16_t kVersion = 43;  // 1 (and 2, its Driving.xbe) sent one tick a bundle; 3 (4) no name or handicap;
                                    // 5 (6) no co-op friendly fire; 7 (8) no rejoining; 9 (10) no host's saves;
                                    // 11 (12) the on-foot sound by the mixer; 13 (14) a driving load's clock counted,
                                    // the car's copied shots paid from player 1's weapon; 15 (16) a seat no one took
@@ -100,7 +100,8 @@ constexpr uint16_t kVersion = 41;  // 1 (and 2, its Driving.xbe) sent one tick a
                                    // Playing ones not the session's bots; 35 (36) no direct connections through
                                    // the relay, no UPnP; 37 (38) the extra enemies beside their originals
                                    // whatever is there, no host co-op settings (kHostSettings); 39 (40) Bots 7
-                                   // and 8's fields alone, no bot teams, a 5-bit host_bot_at
+                                   // and 8's fields alone, no bot teams, a 5-bit host_bot_at; 41 (42) extra
+                                   // enemies in The Exchange's party, the gun's other aims turned with it
 constexpr uint8_t kHello = 1,   // a joiner asking to play, before boot
     kWelcome = 2,               // the host's answer: the controller it is given, the input delay
     kStart = 3,                 // the host: boot, with the session's player count in the sequence
@@ -2932,7 +2933,8 @@ void Init(void* hwnd) {
             ::closesocket(g.sock), g.sock = INVALID_SOCKET;
             return;
         }
-        LOGR("net: hosting on %s:%u, waiting up to %u s for %d players", IpString(lan_ip).c_str(), port, wait, g_target);
+        LOGR("net: hosting on %s:%u, waiting up to %u s for %d players (online version %u)", IpString(lan_ip).c_str(), port,
+             wait, g_target, kVersion);
         static bool opened = false;  // the router is asked once a run, and again by its own thread
         if (host_by != kHostByRelay && upnp && !opened) opened = true, upnp::Open(uint16_t(port));
         if (host_by == kHostByRelay) {
@@ -3129,7 +3131,7 @@ void FindGames(std::vector<app::FoundGame>& out) {
         bool under_way = f.flags & kFindUnderWay, seat = f.flags & kFindSeatFree;
         char s[128];
         if (f.version != kVersion)
-            std::snprintf(s, sizeof s, "another build of the game");
+            std::snprintf(s, sizeof s, "another build of the game (online version %u, this one %u)", f.version, kVersion);
         else if (!under_way)
             std::snprintf(s, sizeof s, "waiting for players, %u of %u", f.in, f.wanted);
         else

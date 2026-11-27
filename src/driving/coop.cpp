@@ -55,8 +55,9 @@ float GetF(uint32_t va) {
 void SetF(uint32_t va, float f) { std::memcpy(&kernel::G<uint32_t>(va), &f, 4); }
 
 struct Aim {
-    float x = 0, y = 0;
-    uint32_t next = 0;  // the game time the gun may fire for them again
+    float x = 0, y = 0;  // tangents across the gun's view (player 1's)
+    uint32_t next = 0;   // the game time the gun may fire for them again
+    float dir[3] = {};   // where it points in the world (0 none yet): the gun's turning does not carry it
 };
 Aim g_aim[kMaxExtra];
 uint32_t g_task[6];      // player 1's last shot
@@ -179,6 +180,36 @@ float Stick(int16_t v) {
     return s * std::fabs(s);
 }
 
+// On the gun an aim keeps its direction in the world as player 1 turns the gun (2026-11-27, John: everyone's own view
+// was dragged along with player 1's): its tangents across the gun's view are worked out again from it each tick,
+// then held to the aim's reach, which alone moves it when the gun turns away far enough
+float Dot(const float a[3], const float b[3]) { return a[0] * b[0] + a[1] * b[1] + a[2] * b[2]; }
+void UnitBasis(uint32_t cam, float f[3], float r[3], float u[3]) {  // a unit forward, so the round trip is exact
+    Basis(cam, f, r, u);
+    float len = std::max(1e-4f, std::sqrt(Dot(f, f)));
+    for (int i = 0; i < 3; i++) f[i] /= len;
+    u[0] = f[1] * r[2] - f[2] * r[1], u[1] = f[2] * r[0] - f[0] * r[2], u[2] = f[0] * r[1] - f[1] * r[0];
+}
+void FromWorld(Aim& a, uint32_t cam) {
+    if (!Dot(a.dir, a.dir)) return;
+    float f[3], r[3], u[3];
+    UnitBasis(cam, f, r, u);
+    float ahead = Dot(a.dir, f);
+    if (ahead < 0.2f) {  // far behind the gun's view (a cutscene's camera, a new gun): its centre
+        a.x = a.y = 0;
+        return;
+    }
+    a.x = std::clamp(Dot(a.dir, r) / ahead, -kMaxX, kMaxX);
+    a.y = std::clamp(Dot(a.dir, u) / ahead, -kMaxY, kMaxY);
+}
+void ToWorld(Aim& a, uint32_t cam) {
+    float f[3], r[3], u[3], len = 0;
+    UnitBasis(cam, f, r, u);
+    for (int i = 0; i < 3; i++) a.dir[i] = f[i] + a.x * r[i] + a.y * u[i], len += a.dir[i] * a.dir[i];
+    len = std::sqrt(len);
+    for (float& v : a.dir) v /= len;
+}
+
 // their aim moved by this tick's input, and whether they hold the trigger
 bool Steer(int player, Aim& a) {
     if (g_test && player == 1) {
@@ -187,6 +218,8 @@ bool Steer(int player, Aim& a) {
     }
     input::Pad p;
     if (!net::PadFor(player, p) || net::PlayerLeft(player)) return false;
+    uint32_t cam = OnGun() ? Camera() : 0;
+    if (cam) FromWorld(a, cam);
     float mx, my;
     if (net::KeyboardFor(player) && net::MouseFor(player, mx, my)) {
         a.x += mx * kMouseRate;
@@ -195,6 +228,7 @@ bool Steer(int player, Aim& a) {
     float sx = Stick(p.lx) + Stick(p.rx), sy = Stick(p.ly) + Stick(p.ry);
     a.x = std::clamp(a.x + std::clamp(sx, -1.0f, 1.0f) * kStickRate, -kMaxX, kMaxX);
     a.y = std::clamp(a.y + std::clamp(sy, -1.0f, 1.0f) * kStickRate, -kMaxY, kMaxY);
+    if (cam) ToWorld(a, cam);
     return p.analog[7] > 64 || (InCar() && p.analog[0] > 64);  // the car's fire is A
 }
 
@@ -386,7 +420,7 @@ void ExtraPlayers(X86Context& ctx, uint8_t* base) {
         if (g_car_held) HoldCarTrigger(false);
         if (g_gun_held) HoldGunTrigger(false);
         g_shown = 0;
-        for (Aim& a : g_aim) a.next = 0;
+        for (Aim& a : g_aim) a.next = 0, a.dir[0] = a.dir[1] = a.dir[2] = 0;
         return;
     }
     static bool said = false;

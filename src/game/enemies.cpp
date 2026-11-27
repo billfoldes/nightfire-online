@@ -59,7 +59,13 @@ void SetF(uint32_t va, float f) {
 }
 
 int Extra() { return std::max(0, nf::CoopCampaignPlayers() - 1); }
-int Copies() { return net::CoopMoreEnemies() ? Extra() : 0; }         // net_coop_more_enemies
+// net_coop_more_enemies; none in The Exchange's party and the castle after it (0x07000007, 0x07000008: no weapon,
+// the guards stand in rows and copies there block the way)
+int Copies() {
+    uint32_t level = R32(0x1F658C);
+    if (level == 0x07000007 || level == 0x07000008) return 0;
+    return net::CoopMoreEnemies() ? Extra() : 0;
+}
 int Toughness() { return net::CoopTougherEnemies() ? Extra() : 0; }   // net_coop_tougher_enemies
 
 bool Enemy(uint32_t obj) {
