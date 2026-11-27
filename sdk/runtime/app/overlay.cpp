@@ -83,7 +83,21 @@ void Scale() {
     ImGui::GetStyle() = s;
 }
 
-void SetHelp(const char* help) { g_help = help; }
+// the page's longest label and tallest help, measured as its rows draw: the values start after the labels (half to
+// 70% of the page) and the footer holds any of the helps, so neither moves as the page scrolls or the mouse moves
+float g_label_w = 0, g_label_next = 0;  // the last frame's, this frame's
+float g_help_wrap = 0, g_help_tallest = 0;
+
+void MeasureHelp(const char* help) {
+    if (help && g_help_wrap > 0) g_help_tallest = std::max(g_help_tallest, ImGui::CalcTextSize(help, nullptr, false, g_help_wrap).y);
+}
+
+float ValueLeft(float w) { return std::clamp(g_label_w + ImGui::GetStyle().FramePadding.x * 3, w * 0.5f, w * 0.7f); }
+
+void SetHelp(const char* help) {
+    g_help = help;
+    MeasureHelp(help);
+}
 
 bool Streaming() { return kGame.streaming && kGame.streaming(); }
 
@@ -124,12 +138,14 @@ Row RowBegin(const char* label, const char* help) {
     }
     r.rect = ImRect(pos, ImVec2(pos.x + w, pos.y + h));
     float pad = ImGui::GetStyle().FramePadding.x;
-    r.value = ImRect(ImVec2(pos.x + w * 0.5f, pos.y + 2), ImVec2(pos.x + w - pad, pos.y + h - 2));
+    const char* end = ImGui::FindRenderedTextEnd(label);
+    g_label_next = std::max(g_label_next, ImGui::CalcTextSize(label, end).x);
+    MeasureHelp(help);
+    r.value = ImRect(ImVec2(pos.x + ValueLeft(w), pos.y + 2), ImVec2(pos.x + w - pad, pos.y + h - 2));
     ImDrawList* dl = ImGui::GetWindowDrawList();
     if (r.selected) dl->AddRectFilled(r.rect.Min, r.rect.Max, kSelect);
     else if (r.hovered) dl->AddRectFilled(r.rect.Min, r.rect.Max, kHover);
     r.text = r.selected ? kWhite : kText;
-    const char* end = ImGui::FindRenderedTextEnd(label);
     dl->AddText(ImVec2(pos.x + pad, pos.y + (h - ImGui::GetFontSize()) * 0.5f), r.text, label, end);
     if (r.selected || r.hovered) SetHelp(help);
     return r;
@@ -325,7 +341,8 @@ void RowMeter(const char* label, float fraction, const char* text) {
     float pad = ImGui::GetStyle().FramePadding.x;
     ImDrawList* dl = ImGui::GetWindowDrawList();
     dl->AddText(ImVec2(pos.x + pad, pos.y + (h - ImGui::GetFontSize()) * 0.5f), kDim, label);
-    ImRect bar(ImVec2(pos.x + w * 0.5f, pos.y + 2), ImVec2(pos.x + w - pad, pos.y + h - 2));
+    g_label_next = std::max(g_label_next, ImGui::CalcTextSize(label).x);
+    ImRect bar(ImVec2(pos.x + ValueLeft(w), pos.y + 2), ImVec2(pos.x + w - pad, pos.y + h - 2));
     Field(bar);
     dl->AddRectFilled(bar.Min + ImVec2(1, 1), ImVec2(bar.Min.x + 1 + (bar.GetWidth() - 2) * std::clamp(fraction, 0.0f, 1.0f), bar.Max.y - 1), kHead);
     ImVec2 size = ImGui::CalcTextSize(text);
@@ -1651,9 +1668,12 @@ void DrawOverlay() {
         ImDrawList* dl = ImGui::GetWindowDrawList();
         ImVec2 origin = ImGui::GetWindowPos(), size = ImGui::GetWindowSize();
         const float pad = em * 0.6f, head_h = em * 2.1f, side_w = em * 9.5f, prompts_h = em * 1.45f;
-        // the footer grows to hold the last frame's help above the buttons, half the window at most
-        static float help_h = 0, last_foot_h = 0;
-        const float foot_h = std::clamp(em * 0.6f + help_h + prompts_h, em * 3.4f, std::max(em * 3.4f, size.y * 0.5f));
+        // the footer holds the page's tallest help so far above the buttons, half the window at most
+        static int measured = -1;
+        static float last_foot_h = 0;
+        if (measured != page) measured = page, g_label_w = g_label_next = g_help_tallest = 0;
+        g_help_wrap = size.x - side_w - pad * 2;
+        const float foot_h = std::clamp(em * 0.6f + g_help_tallest + prompts_h, em * 3.4f, std::max(em * 3.4f, size.y * 0.5f));
         const bool foot_grew = foot_h > last_foot_h;
         last_foot_h = foot_h;
 
@@ -1709,7 +1729,9 @@ void DrawOverlay() {
             else g.NavId = page_window->NavLastIds[0];
         }
         ImGui::Dummy(ImVec2(0, em * 0.2f));
+        g_label_next = 0;
         pages[page].draw(s);
+        g_label_w = g_label_next;
         ImGui::Dummy(ImVec2(0, em * 0.5f));
         // a controller's or the keyboard's selected row stays above the taller footer; with the mouse the help is the
         // hovered row's, and the selected one may be far up the page
@@ -1724,11 +1746,9 @@ void DrawOverlay() {
         dl = ImGui::GetWindowDrawList();
         dl->AddRectFilled(foot, origin + size, kHead);
         dl->AddLine(foot, foot + ImVec2(size.x - side_w, 0), kDark);
-        help_h = 0;
         if (g_help) {
             ImGui::PushFont(nullptr);
-            float wrap = size.x - side_w - pad * 2;
-            help_h = ImGui::CalcTextSize(g_help, nullptr, false, wrap).y;
+            float wrap = g_help_wrap;
             dl->PushClipRect(foot, origin + size - ImVec2(0, prompts_h + em * 0.1f), true);
             dl->AddText(nullptr, 0, foot + ImVec2(pad, em * 0.35f), kText, g_help, nullptr, wrap);
             dl->PopClipRect();
