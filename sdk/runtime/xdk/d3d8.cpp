@@ -921,6 +921,8 @@ uint32_t PresentVblanks() {
 }
 }  // namespace
 
+uint32_t d3d::Presents() { return g_presents.load(); }
+
 // Swap(flags): D3DSWAP_COPY 1 and D3DSWAP_BYPASSCOPY 2 without D3DSWAP_FINISH 4 open the copy to the front buffer
 // (the target becomes the front, texture 0 the back buffer, as the library sets them); FINISH shows the frame and
 // gives the back buffer and depth back as the target. 0 is COPY | FINISH. The count moves on once a frame.

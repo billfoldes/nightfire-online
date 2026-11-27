@@ -33,6 +33,7 @@
 #include "image_symbols.h"
 #include "kernel/kernel.h"
 #include "kernel/memory.h"
+#include "xdk/d3d8.h"
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND, UINT, WPARAM, LPARAM);
 
@@ -417,6 +418,33 @@ void OpenGameWindow(bool apply) { SendMessageW(g_hwnd, kOpenWindow, apply, 0); }
 
 bool Paused() { return Get().pause_unfocused && !g_active && g_hwnd && IsWindowVisible(g_hwnd); }
 
+// no frame for 20 seconds once the game has shown one, not paused: every guest thread's registers and return
+// addresses (and whether it waits in the kernel) and the kernel's objects go to the log, and a dump to CrashDumps
+// (the build's .map names its host frames). Once a session: a hang is otherwise a log that just stops
+void WatchFrames() {
+    std::thread([] {
+        constexpr int kStuck = 20;
+        uint32_t last = d3d::Presents();
+        for (int still = 0;;) {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+            uint32_t now = d3d::Presents();
+            if (now != last || !now || Paused()) {
+                last = now, still = 0;
+                continue;
+            }
+            if (++still < kStuck) continue;
+            LOGE("no frame for %d seconds (frame %u)", kStuck, now);
+            for (auto& t : kernel::Threads()) {
+                LOGE("guest thread %X%s", t->id, t->parked ? ", waiting in the kernel" : "");
+                if (t->ctx) kernel::LogGuestStack(*t->ctx, 256);
+            }
+            kernel::LogInventory();
+            WriteCrashDump(nullptr);
+            return;
+        }
+    }).detach();
+}
+
 void Pace(uint32_t vblanks) {
     using clock = std::chrono::steady_clock;
     static clock::time_point next = clock::now();
@@ -526,6 +554,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE, PWSTR, int) {
                     MB_ICONERROR);
         return 1;
     }
+    app::WatchFrames();
 
     MSG msg;
     while (GetMessageW(&msg, nullptr, 0, 0) > 0) {
